@@ -208,7 +208,7 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
     let selected = app.stage.selected_count();
     let stage_label: String;
     let mut bindings: Vec<(&str, &str)> = vec![
-        ("\u{2191}/\u{2193}/j/k", "move"),
+        ("\u{2191}/\u{2193}/w/s", "move"),
         ("Space", "toggle"),
         ("a", "all"),
         ("r", "refresh"),

@@ -46,8 +46,8 @@ pub fn map_key(code: KeyCode) -> Action {
     match code {
         KeyCode::Char('q') => Action::Quit,
         KeyCode::Esc => Action::Back,
-        KeyCode::Up | KeyCode::Char('k') => Action::MoveUp,
-        KeyCode::Down | KeyCode::Char('j') => Action::MoveDown,
+        KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('w') => Action::MoveUp,
+        KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('s') => Action::MoveDown,
         KeyCode::Enter => Action::Select,
         KeyCode::Char(' ') => Action::Toggle,
         KeyCode::Char('a') => Action::ToggleAll,

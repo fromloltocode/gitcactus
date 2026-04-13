@@ -95,7 +95,7 @@ fn render_menu(frame: &mut Frame, area: Rect, app: &App) {
 
     // Footer keybind hints
     render_help_bar(frame, chunks[2], &[
-        ("\u{2191}/\u{2193}/j/k", "navigate"),
+        ("\u{2191}/\u{2193}/j/k/w/s", "navigate"),
         ("Enter", "select"),
         ("q", "quit"),
     ]);

@@ -55,7 +55,7 @@ pub const MENU_ITEMS: &[(&str, Screen)] = &[
     ("Branches", Screen::Branches),
     ("History", Screen::History),
     ("Remote Sync", Screen::RemoteSync),
-    ("Help", Screen::Help),
+    ("Controls", Screen::Help),
     ("Check for Updates", Screen::Update),
     ("Quit", Screen::Title), // sentinel — handled specially
 ];
@@ -198,6 +198,10 @@ pub struct UpdateState {
     pub info: Option<crate::update::UpdateInfo>,
 }
 
+impl Default for UpdateState {
+    fn default() -> Self { Self::new() }
+}
+
 impl UpdateState {
     pub fn new() -> Self {
         Self {
@@ -250,6 +254,10 @@ pub struct CommitState {
     pub result_msg: Option<(String, bool)>,
 }
 
+impl Default for CommitState {
+    fn default() -> Self { Self::new() }
+}
+
 impl CommitState {
     pub fn new() -> Self {
         Self {
@@ -287,6 +295,47 @@ impl CommitState {
     }
 }
 
+// ── Help / Controls screen state ────────────────────────────────────
+
+/// Total number of pages in the controls screen.
+pub const HELP_PAGE_COUNT: usize = 4;
+
+/// Page titles for the controls screen (fighting-game categories).
+pub const HELP_PAGE_TITLES: &[&str] = &[
+    "BASIC MOVES",
+    "SPECIAL MOVES",
+    "POWER MOVES",
+    "DEFENSIVE MOVES",
+];
+
+/// State for the Help / Controls screen.
+pub struct HelpState {
+    /// Currently visible page (0-indexed).
+    pub page: usize,
+}
+
+impl Default for HelpState {
+    fn default() -> Self { Self::new() }
+}
+
+impl HelpState {
+    pub fn new() -> Self {
+        Self { page: 0 }
+    }
+
+    pub fn next_page(&mut self) {
+        if self.page < HELP_PAGE_COUNT - 1 {
+            self.page += 1;
+        }
+    }
+
+    pub fn prev_page(&mut self) {
+        if self.page > 0 {
+            self.page -= 1;
+        }
+    }
+}
+
 pub struct App {
     /// Which screen is currently shown.
     pub screen: Screen,
@@ -300,6 +349,12 @@ pub struct App {
     pub update: UpdateState,
     /// State for the Commit Changes screen.
     pub commit: CommitState,
+    /// State for the Help / Controls screen.
+    pub help: HelpState,
+}
+
+impl Default for App {
+    fn default() -> Self { Self::new() }
 }
 
 impl App {
@@ -317,6 +372,7 @@ impl App {
             },
             update: UpdateState::new(),
             commit: CommitState::new(),
+            help: HelpState::new(),
         }
     }
 
@@ -393,6 +449,10 @@ impl App {
                         Screen::Stage => Effect::RefreshAndResetStage,
                         Screen::Update => Effect::InitUpdate,
                         Screen::Commit => Effect::InitCommit,
+                        Screen::Help => {
+                            self.help = HelpState::new();
+                            Effect::None
+                        }
                         _ => Effect::None,
                     }
                 }
@@ -487,6 +547,24 @@ impl App {
                     // Any key: refresh and go back to menu.
                     Effect::RefreshAfterCommit
                 }
+            },
+
+            // ── Help / Controls ───────────────────────────────────
+            Screen::Help => match action {
+                Action::Quit => Effect::Quit,
+                Action::Back => {
+                    self.back_to_menu();
+                    Effect::None
+                }
+                Action::MoveDown | Action::Select => {
+                    self.help.next_page();
+                    Effect::None
+                }
+                Action::MoveUp => {
+                    self.help.prev_page();
+                    Effect::None
+                }
+                _ => Effect::None,
             },
 
             // ── Update ────────────────────────────────────────────

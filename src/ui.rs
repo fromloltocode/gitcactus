@@ -6,7 +6,7 @@ use ratatui::Frame;
 
 use crate::app::{App, Screen};
 use crate::git::status::RepoStatus;
-use crate::screens::{commit, menu, stage, status, title, update};
+use crate::screens::{commit, help, menu, stage, status, title, update};
 
 pub fn draw(frame: &mut Frame, app: &App, repo_status: &RepoStatus) {
     let area = frame.area();
@@ -18,9 +18,9 @@ pub fn draw(frame: &mut Frame, app: &App, repo_status: &RepoStatus) {
         Screen::Stage => stage::render(frame, area, app),
         Screen::Update => update::render(frame, area, app),
         Screen::Commit => commit::render(frame, area, app),
+        Screen::Help => help::render(frame, area, app),
         Screen::Branches => status::render_placeholder(frame, area, "Branches"),
         Screen::History => status::render_placeholder(frame, area, "History"),
         Screen::RemoteSync => status::render_placeholder(frame, area, "Remote Sync"),
-        Screen::Help => status::render_placeholder(frame, area, "Help"),
     }
 }
