@@ -1,5 +1,7 @@
 pub mod commit;
+pub mod diff;
 pub mod help;
+pub mod intro;
 pub mod menu;
 pub mod stage;
 pub mod status;

@@ -31,6 +31,8 @@ pub enum Action {
     Deny,
     /// A typed character (used in text-input mode).
     Char(char),
+    /// Preview / inspect (d).
+    Preview,
     /// Backspace (used in text-input mode).
     Backspace,
     /// A key that doesn't map to a specific command — used for
@@ -54,6 +56,7 @@ pub fn map_key(code: KeyCode) -> Action {
         KeyCode::Char('r') => Action::Refresh,
         KeyCode::Char('y') => Action::Confirm,
         KeyCode::Char('n') => Action::Deny,
+        KeyCode::Char('d') => Action::Preview,
         _ => Action::Other,
     }
 }

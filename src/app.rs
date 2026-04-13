@@ -30,11 +30,16 @@ pub enum Effect {
     CreateCommit(String),
     /// Refresh status after a successful commit.
     RefreshAfterCommit,
+    /// Load a diff for the given file path (read-only).
+    LoadDiff(String),
+    /// The intro animation completed — mark it as seen and advance.
+    IntroFinished,
 }
 
 /// The screens the app can display.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
+    Intro,
     Title,
     Menu,
     Status,
@@ -45,6 +50,7 @@ pub enum Screen {
     RemoteSync,
     Help,
     Update,
+    DiffPreview,
 }
 
 /// Main menu items, in display order.
@@ -336,6 +342,83 @@ impl HelpState {
     }
 }
 
+// ── Intro animation state ───────────────────────────────────────────
+
+/// Total number of intro frames (boot log + logo reveal + blink cycles).
+pub const INTRO_TOTAL_FRAMES: usize = 20;
+
+/// State for the retro intro animation.
+pub struct IntroState {
+    /// Current animation frame.
+    pub frame: usize,
+    /// Whether the animation has finished or been skipped.
+    pub done: bool,
+}
+
+impl Default for IntroState {
+    fn default() -> Self { Self::new() }
+}
+
+impl IntroState {
+    pub fn new() -> Self {
+        Self { frame: 0, done: false }
+    }
+
+    /// Advance to the next frame. Returns true if animation is now done.
+    pub fn tick(&mut self) -> bool {
+        if self.done {
+            return true;
+        }
+        self.frame += 1;
+        if self.frame >= INTRO_TOTAL_FRAMES {
+            self.done = true;
+        }
+        self.done
+    }
+
+    /// Skip the animation immediately.
+    pub fn skip(&mut self) {
+        self.done = true;
+    }
+}
+
+// ── Diff preview state ──────────────────────────────────────────────
+
+/// State for the read-only diff preview screen.
+pub struct DiffState {
+    /// The diff result to display.
+    pub result: crate::git::diff::DiffResult,
+    /// Scroll offset within the diff lines.
+    pub scroll: usize,
+}
+
+impl Default for DiffState {
+    fn default() -> Self { Self::new() }
+}
+
+impl DiffState {
+    pub fn new() -> Self {
+        Self {
+            result: crate::git::diff::DiffResult {
+                file_path: String::new(),
+                kind: crate::git::diff::DiffKind::Empty,
+                lines: vec![],
+                truncated: false,
+            },
+            scroll: 0,
+        }
+    }
+
+    pub fn scroll_up(&mut self) {
+        self.scroll = self.scroll.saturating_sub(3);
+    }
+
+    pub fn scroll_down(&mut self) {
+        let max = self.result.lines.len().saturating_sub(1);
+        self.scroll = (self.scroll + 3).min(max);
+    }
+}
+
 pub struct App {
     /// Which screen is currently shown.
     pub screen: Screen,
@@ -351,6 +434,10 @@ pub struct App {
     pub commit: CommitState,
     /// State for the Help / Controls screen.
     pub help: HelpState,
+    /// State for the retro intro animation.
+    pub intro: IntroState,
+    /// State for the diff preview screen.
+    pub diff: DiffState,
 }
 
 impl Default for App {
@@ -360,7 +447,7 @@ impl Default for App {
 impl App {
     pub fn new() -> Self {
         Self {
-            screen: Screen::Title,
+            screen: Screen::Intro,
             menu_index: 0,
             should_quit: false,
             stage: StageState {
@@ -373,6 +460,8 @@ impl App {
             update: UpdateState::new(),
             commit: CommitState::new(),
             help: HelpState::new(),
+            intro: IntroState::new(),
+            diff: DiffState::new(),
         }
     }
 
@@ -421,6 +510,13 @@ impl App {
     /// (I/O, git operations, etc.) and feeding the results back in.
     pub fn handle_action(&mut self, action: Action) -> Effect {
         match self.screen {
+            // ── Intro ────────────────────────────────────────────
+            Screen::Intro => {
+                // Any key skips the intro animation.
+                self.intro.skip();
+                Effect::IntroFinished
+            }
+
             // ── Title ────────────────────────────────────────────
             Screen::Title => {
                 // Any key (including Quit/Back) advances to menu.
@@ -484,6 +580,14 @@ impl App {
                         Effect::None
                     }
                     Action::Refresh => Effect::RefreshAndResetStage,
+                    Action::Preview => {
+                        if let Some(entry) = self.stage.entries.get(self.stage.cursor) {
+                            let path = entry.path.clone();
+                            self.screen = Screen::DiffPreview;
+                            return Effect::LoadDiff(path);
+                        }
+                        Effect::None
+                    }
                     Action::Select => {
                         if self.stage.selected_count() > 0 {
                             self.stage.mode = StageMode::Confirm;
@@ -547,6 +651,24 @@ impl App {
                     // Any key: refresh and go back to menu.
                     Effect::RefreshAfterCommit
                 }
+            },
+
+            // ── Diff Preview (read-only) ─────────────────────────
+            Screen::DiffPreview => match action {
+                Action::Quit => Effect::Quit,
+                Action::Back => {
+                    self.screen = Screen::Stage;
+                    Effect::None
+                }
+                Action::MoveUp => {
+                    self.diff.scroll_up();
+                    Effect::None
+                }
+                Action::MoveDown => {
+                    self.diff.scroll_down();
+                    Effect::None
+                }
+                _ => Effect::None,
             },
 
             // ── Help / Controls ───────────────────────────────────

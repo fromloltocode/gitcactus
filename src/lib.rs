@@ -3,5 +3,6 @@ pub mod git;
 pub mod input;
 pub mod mascot;
 pub mod screens;
+pub mod settings;
 pub mod ui;
 pub mod update;

@@ -210,6 +210,7 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
     let mut bindings: Vec<(&str, &str)> = vec![
         ("\u{2191}/\u{2193}/w/s", "move"),
         ("Space", "toggle"),
+        ("d", "diff"),
         ("a", "all"),
         ("r", "refresh"),
     ];

@@ -20,6 +20,7 @@ const ALL_ACTIONS: &[Action] = &[
     Action::Char('x'),
     Action::Char(' '),
     Action::Char('\n'),
+    Action::Preview,
     Action::Backspace,
     Action::Other,
 ];
@@ -28,6 +29,7 @@ const ALL_ACTIONS: &[Action] = &[
 const READ_ONLY_SCREENS: &[Screen] = &[
     Screen::Title,
     Screen::Help,
+    Screen::DiffPreview,
     Screen::Branches,
     Screen::History,
     Screen::RemoteSync,

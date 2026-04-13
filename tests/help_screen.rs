@@ -115,6 +115,7 @@ fn app_help_screen_ignores_irrelevant_actions() {
     for action in [
         Action::Toggle,
         Action::ToggleAll,
+        Action::Preview,
         Action::Refresh,
         Action::Confirm,
         Action::Deny,
