@@ -43,6 +43,10 @@ pub enum Effect {
     LoadBranches,
     /// Switch to the given branch name (after confirmation).
     SwitchBranch(String),
+    /// Load full details for the given commit hash (read-only).
+    LoadCommitDetails(String),
+    /// Load a diff for the given commit vs its parent (read-only).
+    LoadCommitDiff(String),
 }
 
 /// The screens the app can display.
@@ -61,6 +65,7 @@ pub enum Screen {
     Update,
     DiffPreview,
     Settings,
+    CommitDetails,
 }
 
 /// Main menu items, in display order.
@@ -401,6 +406,8 @@ pub struct DiffState {
     pub result: crate::git::diff::DiffResult,
     /// Scroll offset within the diff lines.
     pub scroll: usize,
+    /// Which screen to return to on Esc.
+    pub return_to: Screen,
 }
 
 impl Default for DiffState {
@@ -417,6 +424,7 @@ impl DiffState {
                 truncated: false,
             },
             scroll: 0,
+            return_to: Screen::Stage,
         }
     }
 
@@ -467,6 +475,42 @@ impl HistoryState {
         if self.cursor < max {
             self.cursor += 1;
         }
+    }
+}
+
+// ── Commit details screen state ─────────────────────────────────────
+
+/// State for the commit details screen.
+pub struct CommitDetailsState {
+    pub details: crate::git::commit_details::CommitDetails,
+    /// Scroll position (for long messages + file lists).
+    pub scroll: usize,
+    /// Hash we came from — used when returning from diff screen.
+    pub source_hash: String,
+}
+
+impl Default for CommitDetailsState {
+    fn default() -> Self { Self::new() }
+}
+
+impl CommitDetailsState {
+    pub fn new() -> Self {
+        Self {
+            details: crate::git::commit_details::CommitDetails::empty(),
+            scroll: 0,
+            source_hash: String::new(),
+        }
+    }
+
+    pub fn scroll_up(&mut self) {
+        self.scroll = self.scroll.saturating_sub(2);
+    }
+
+    pub fn scroll_down(&mut self) {
+        // Clamp against (message lines + file count) — simple upper bound.
+        let msg_lines = self.details.message.lines().count();
+        let max = msg_lines + self.details.files.len() + 8;
+        self.scroll = (self.scroll + 2).min(max.saturating_sub(1));
     }
 }
 
@@ -616,6 +660,8 @@ pub struct App {
     pub history: HistoryState,
     /// State for the Branches screen.
     pub branches_state: BranchesState,
+    /// State for the Commit Details screen.
+    pub commit_details: CommitDetailsState,
 }
 
 impl Default for App {
@@ -644,6 +690,7 @@ impl App {
             settings_state: SettingsState::new(),
             history: HistoryState::new(),
             branches_state: BranchesState::new(),
+            commit_details: CommitDetailsState::new(),
         }
     }
 
@@ -771,6 +818,7 @@ impl App {
                     Action::Preview => {
                         if let Some(entry) = self.stage.entries.get(self.stage.cursor) {
                             let path = entry.path.clone();
+                            self.diff.return_to = Screen::Stage;
                             self.screen = Screen::DiffPreview;
                             return Effect::LoadDiff(path);
                         }
@@ -845,7 +893,7 @@ impl App {
             Screen::DiffPreview => match action {
                 Action::Quit => Effect::Quit,
                 Action::Back => {
-                    self.screen = Screen::Stage;
+                    self.screen = self.diff.return_to;
                     Effect::None
                 }
                 Action::MoveUp => {
@@ -952,6 +1000,53 @@ impl App {
                     Effect::None
                 }
                 Action::Refresh => Effect::LoadHistory,
+                Action::Select => {
+                    if let Some(entry) = self.history.result.entries.get(self.history.cursor) {
+                        let hash = entry.full_hash.clone();
+                        self.screen = Screen::CommitDetails;
+                        Effect::LoadCommitDetails(hash)
+                    } else {
+                        Effect::None
+                    }
+                }
+                Action::Preview => {
+                    if let Some(entry) = self.history.result.entries.get(self.history.cursor) {
+                        let hash = entry.full_hash.clone();
+                        self.diff.return_to = Screen::History;
+                        self.screen = Screen::DiffPreview;
+                        Effect::LoadCommitDiff(hash)
+                    } else {
+                        Effect::None
+                    }
+                }
+                _ => Effect::None,
+            },
+
+            // ── Commit Details (read-only) ────────────────────────
+            Screen::CommitDetails => match action {
+                Action::Quit => Effect::Quit,
+                Action::Back => {
+                    self.screen = Screen::History;
+                    Effect::None
+                }
+                Action::MoveUp => {
+                    self.commit_details.scroll_up();
+                    Effect::None
+                }
+                Action::MoveDown => {
+                    self.commit_details.scroll_down();
+                    Effect::None
+                }
+                Action::Preview | Action::Select => {
+                    let hash = self.commit_details.source_hash.clone();
+                    if !hash.is_empty() {
+                        self.diff.return_to = Screen::CommitDetails;
+                        self.screen = Screen::DiffPreview;
+                        Effect::LoadCommitDiff(hash)
+                    } else {
+                        Effect::None
+                    }
+                }
                 _ => Effect::None,
             },
 

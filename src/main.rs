@@ -184,6 +184,15 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
                 app.branches_state.cursor = max;
             }
         }
+        Effect::LoadCommitDetails(hash) => {
+            app.commit_details.details = git::commit_details::load_commit_details(".", &hash);
+            app.commit_details.scroll = 0;
+            app.commit_details.source_hash = hash;
+        }
+        Effect::LoadCommitDiff(hash) => {
+            app.diff.result = git::diff::get_commit_diff(".", &hash);
+            app.diff.scroll = 0;
+        }
         Effect::SwitchBranch(name) => {
             use git::branches::SwitchResult;
             match git::branches::switch_branch(".", &name) {

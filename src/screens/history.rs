@@ -222,6 +222,8 @@ fn render_side_panel(frame: &mut Frame, area: Rect, app: &App) {
 fn render_footer(frame: &mut Frame, area: Rect) {
     render_help_bar(frame, area, &[
         ("\u{2191}/\u{2193}/w/s", "move"),
+        ("Enter", "details"),
+        ("d", "diff"),
         ("r", "refresh"),
         ("Esc", "back"),
         ("q", "quit"),

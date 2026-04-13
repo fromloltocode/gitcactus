@@ -258,6 +258,14 @@ impl Terms {
         }
     }
 
+    pub fn title_commit_details(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => " Checkpoint Details ",
+            TermMode::Hybrid => " Checkpoint Details (Commit) ",
+            TermMode::Git => " Commit Details ",
+        }
+    }
+
     pub fn title_diff(&self) -> &'static str {
         match self.mode {
             TermMode::Beginner => " Compare Changes ",

@@ -140,6 +140,107 @@ fn read_new_file(repo: &Repository, file_path: &str) -> DiffResult {
     }
 }
 
+/// Get a read-only diff for a commit against its first parent.
+///
+/// Shows all file changes introduced by the commit. Used from the
+/// commit details screen. Truncates at `MAX_DIFF_LINES` like file diffs.
+pub fn get_commit_diff(repo_path: &str, hash: &str) -> DiffResult {
+    let repo = match Repository::discover(repo_path) {
+        Ok(r) => r,
+        Err(e) => {
+            return DiffResult {
+                file_path: hash.to_string(),
+                kind: DiffKind::Error(format!("Not a git repo: {e}")),
+                lines: vec![],
+                truncated: false,
+            };
+        }
+    };
+
+    let oid = match git2::Oid::from_str(hash) {
+        Ok(o) => o,
+        Err(e) => {
+            return DiffResult {
+                file_path: hash.to_string(),
+                kind: DiffKind::Error(format!("Invalid hash: {e}")),
+                lines: vec![],
+                truncated: false,
+            };
+        }
+    };
+
+    let commit = match repo.find_commit(oid) {
+        Ok(c) => c,
+        Err(e) => {
+            return DiffResult {
+                file_path: hash.to_string(),
+                kind: DiffKind::Error(format!("Commit not found: {e}")),
+                lines: vec![],
+                truncated: false,
+            };
+        }
+    };
+
+    let commit_tree = match commit.tree() {
+        Ok(t) => t,
+        Err(e) => {
+            return DiffResult {
+                file_path: hash.to_string(),
+                kind: DiffKind::Error(format!("Could not read tree: {e}")),
+                lines: vec![],
+                truncated: false,
+            };
+        }
+    };
+
+    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+
+    let diff = match repo.diff_tree_to_tree(
+        parent_tree.as_ref(),
+        Some(&commit_tree),
+        None,
+    ) {
+        Ok(d) => d,
+        Err(e) => {
+            return DiffResult {
+                file_path: hash.to_string(),
+                kind: DiffKind::Error(format!("Diff failed: {e}")),
+                lines: vec![],
+                truncated: false,
+            };
+        }
+    };
+
+    let mut lines: Vec<DiffLine> = Vec::new();
+    let mut truncated = false;
+
+    let _ = diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+        if lines.len() >= MAX_DIFF_LINES {
+            truncated = true;
+            return true;
+        }
+        let origin = match line.origin() {
+            '+' | '>' => '+',
+            '-' | '<' => '-',
+            'H' | 'F' => 'H',
+            _ => ' ',
+        };
+        let content = String::from_utf8_lossy(line.content())
+            .trim_end()
+            .to_string();
+        lines.push(DiffLine { origin, content });
+        true
+    });
+
+    let short = &hash[..7.min(hash.len())];
+    DiffResult {
+        file_path: format!("commit {short}"),
+        kind: DiffKind::Modified,
+        lines,
+        truncated,
+    }
+}
+
 fn diff_workdir_file(repo: &Repository, file_path: &str) -> DiffResult {
     let mut opts = DiffOptions::new();
     opts.pathspec(file_path);
