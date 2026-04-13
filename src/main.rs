@@ -176,5 +176,34 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
             app.history.result = git::history::load_history(".");
             app.history.cursor = 0;
         }
+        Effect::LoadBranches => {
+            app.branches_state.branches = git::branches::load_branches(".");
+            // Clamp cursor into new range.
+            let max = app.branches_state.branches.branches.len().saturating_sub(1);
+            if app.branches_state.cursor > max {
+                app.branches_state.cursor = max;
+            }
+        }
+        Effect::SwitchBranch(name) => {
+            use git::branches::SwitchResult;
+            match git::branches::switch_branch(".", &name) {
+                SwitchResult::Ok(branch) => {
+                    app.branches_state.result_msg = Some((
+                        format!("Switched to '{branch}'."),
+                        true,
+                    ));
+                }
+                SwitchResult::DirtyWorkingTree => {
+                    app.branches_state.result_msg = Some((
+                        "Can't switch — commit or stage changes first.".into(),
+                        false,
+                    ));
+                }
+                SwitchResult::Error(e) => {
+                    app.branches_state.result_msg = Some((e, false));
+                }
+            }
+            app.branches_state.mode = app::BranchesMode::Result;
+        }
     }
 }

@@ -39,6 +39,10 @@ pub enum Effect {
     SaveTermMode(crate::terminology::TermMode),
     /// Load commit history (read-only).
     LoadHistory,
+    /// Load the branch list (read-only).
+    LoadBranches,
+    /// Switch to the given branch name (after confirmation).
+    SwitchBranch(String),
 }
 
 /// The screens the app can display.
@@ -466,6 +470,74 @@ impl HistoryState {
     }
 }
 
+// ── Branches screen state ───────────────────────────────────────────
+
+/// Sub-mode for the branches screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BranchesMode {
+    /// Browsing the branch list.
+    Browse,
+    /// Confirmation dialog to switch branches.
+    ConfirmSwitch,
+    /// Showing a result message.
+    Result,
+}
+
+/// State for the Branches screen.
+pub struct BranchesState {
+    pub branches: crate::git::branches::BranchListResult,
+    pub cursor: usize,
+    pub mode: BranchesMode,
+    pub result_msg: Option<(String, bool)>,
+}
+
+impl Default for BranchesState {
+    fn default() -> Self { Self::new() }
+}
+
+impl BranchesState {
+    pub fn new() -> Self {
+        Self {
+            branches: crate::git::branches::BranchListResult {
+                branches: vec![],
+                error: None,
+            },
+            cursor: 0,
+            mode: BranchesMode::Browse,
+            result_msg: None,
+        }
+    }
+
+    pub fn move_up(&mut self) {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+        }
+    }
+
+    pub fn move_down(&mut self) {
+        let max = self.branches.branches.len().saturating_sub(1);
+        if self.cursor < max {
+            self.cursor += 1;
+        }
+    }
+
+    /// Return the name of the currently highlighted branch, if any.
+    pub fn selected_name(&self) -> Option<&str> {
+        self.branches
+            .branches
+            .get(self.cursor)
+            .map(|b| b.name.as_str())
+    }
+
+    /// Whether the highlighted branch is the current one.
+    pub fn selected_is_current(&self) -> bool {
+        self.branches
+            .branches
+            .get(self.cursor)
+            .is_some_and(|b| b.is_current)
+    }
+}
+
 // ── Settings screen state ───────────────────────────────────────────
 
 /// The terminology modes available for selection, in display order.
@@ -542,6 +614,8 @@ pub struct App {
     pub settings_state: SettingsState,
     /// State for the History screen.
     pub history: HistoryState,
+    /// State for the Branches screen.
+    pub branches_state: BranchesState,
 }
 
 impl Default for App {
@@ -569,6 +643,7 @@ impl App {
             terms: Terms::new(crate::terminology::TermMode::Hybrid),
             settings_state: SettingsState::new(),
             history: HistoryState::new(),
+            branches_state: BranchesState::new(),
         }
     }
 
@@ -661,6 +736,7 @@ impl App {
                             Effect::None
                         }
                         Screen::History => Effect::LoadHistory,
+                        Screen::Branches => Effect::LoadBranches,
                         _ => Effect::None,
                     }
                 }
@@ -799,6 +875,65 @@ impl App {
                     Effect::None
                 }
                 _ => Effect::None,
+            },
+
+            // ── Branches ──────────────────────────────────────────
+            Screen::Branches => match self.branches_state.mode {
+                BranchesMode::Browse => match action {
+                    Action::Quit => Effect::Quit,
+                    Action::Back => {
+                        self.back_to_menu();
+                        Effect::None
+                    }
+                    Action::MoveUp => {
+                        self.branches_state.move_up();
+                        Effect::None
+                    }
+                    Action::MoveDown => {
+                        self.branches_state.move_down();
+                        Effect::None
+                    }
+                    Action::Refresh => Effect::LoadBranches,
+                    Action::Select => {
+                        if self.branches_state.selected_is_current() {
+                            // Already on this branch — friendly no-op message.
+                            self.branches_state.result_msg = Some((
+                                "You're already on this path!".into(),
+                                true,
+                            ));
+                            self.branches_state.mode = BranchesMode::Result;
+                            Effect::None
+                        } else if let Some(name) = self.branches_state.selected_name() {
+                            let _ = name; // used for the confirmation dialog
+                            self.branches_state.mode = BranchesMode::ConfirmSwitch;
+                            Effect::None
+                        } else {
+                            Effect::None
+                        }
+                    }
+                    _ => Effect::None,
+                },
+                BranchesMode::ConfirmSwitch => match action {
+                    Action::Confirm | Action::Select => {
+                        if let Some(name) = self.branches_state.selected_name() {
+                            let name = name.to_string();
+                            Effect::SwitchBranch(name)
+                        } else {
+                            self.branches_state.mode = BranchesMode::Browse;
+                            Effect::None
+                        }
+                    }
+                    Action::Deny | Action::Back => {
+                        self.branches_state.mode = BranchesMode::Browse;
+                        Effect::None
+                    }
+                    _ => Effect::None,
+                },
+                BranchesMode::Result => {
+                    // Any key: reload branches and go back to browse.
+                    self.branches_state.mode = BranchesMode::Browse;
+                    Effect::LoadBranches
+                }
             },
 
             // ── History (read-only) ───────────────────────────────

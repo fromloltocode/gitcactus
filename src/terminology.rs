@@ -242,6 +242,14 @@ impl Terms {
         }
     }
 
+    pub fn title_branches(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => " Saved Paths ",
+            TermMode::Hybrid => " Branches ",
+            TermMode::Git => " Branches ",
+        }
+    }
+
     pub fn title_history(&self) -> &'static str {
         match self.mode {
             TermMode::Beginner => " Checkpoint History ",
