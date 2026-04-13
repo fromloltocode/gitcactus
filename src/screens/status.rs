@@ -7,16 +7,17 @@ use ratatui::Frame;
 use crate::git::status::RepoStatus;
 use crate::mascot::cactus;
 use crate::screens::render_help_bar;
+use crate::terminology::Terms;
 
 /// Render the status screen with a two-column layout:
 ///   Left  — file status grouped by category
 ///   Right — cactus mascot + contextual tip + educational note
 ///   Bottom — keybinding footer
-pub fn render(frame: &mut Frame, area: Rect, repo: &RepoStatus) {
+pub fn render(frame: &mut Frame, area: Rect, repo: &RepoStatus, terms: &Terms) {
     let outer = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::DarkGray))
-        .title(" Status ")
+        .title(terms.title_status())
         .title_alignment(Alignment::Center);
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
@@ -35,14 +36,14 @@ pub fn render(frame: &mut Frame, area: Rect, repo: &RepoStatus) {
     ])
     .split(vert[0]);
 
-    render_main_panel(frame, cols[0], repo);
+    render_main_panel(frame, cols[0], repo, terms);
     render_side_panel(frame, cols[1], repo);
     render_footer(frame, vert[1]);
 }
 
 // ── Main panel: branch + grouped file lists ──────────────────────────
 
-fn render_main_panel(frame: &mut Frame, area: Rect, repo: &RepoStatus) {
+fn render_main_panel(frame: &mut Frame, area: Rect, repo: &RepoStatus, terms: &Terms) {
     let block = Block::default()
         .borders(Borders::RIGHT)
         .border_style(Style::default().fg(Color::DarkGray));
@@ -53,7 +54,7 @@ fn render_main_panel(frame: &mut Frame, area: Rect, repo: &RepoStatus) {
 
     // Branch header
     lines.push(Line::from(vec![
-        Span::styled("  Branch: ", Style::default().fg(Color::DarkGray)),
+        Span::styled(format!("  {}: ", terms.current_branch()), Style::default().fg(Color::DarkGray)),
         Span::styled(
             &repo.branch,
             Style::default()
@@ -75,7 +76,7 @@ fn render_main_panel(frame: &mut Frame, area: Rect, repo: &RepoStatus) {
         // Staged
         push_group(
             &mut lines,
-            "Staged",
+            terms.staged(),
             "*",
             Color::Green,
             repo.staged,
@@ -85,7 +86,7 @@ fn render_main_panel(frame: &mut Frame, area: Rect, repo: &RepoStatus) {
         // Modified
         push_group(
             &mut lines,
-            "Modified",
+            terms.modified(),
             "~",
             Color::Yellow,
             repo.modified,
@@ -95,7 +96,7 @@ fn render_main_panel(frame: &mut Frame, area: Rect, repo: &RepoStatus) {
         // Untracked
         push_group(
             &mut lines,
-            "Untracked",
+            terms.untracked(),
             "?",
             Color::Red,
             repo.untracked,

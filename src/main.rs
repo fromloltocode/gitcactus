@@ -4,6 +4,8 @@ mod input;
 mod mascot;
 mod screens;
 mod settings;
+#[allow(dead_code)]
+mod terminology;
 mod ui;
 mod update;
 
@@ -56,6 +58,8 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
 
     // Check settings — skip intro if already seen or --skip-intro flag.
     let user_settings = Settings::load();
+    app.terms = terminology::Terms::new(user_settings.term_mode);
+
     let skip_intro = user_settings.skip_intro
         || std::env::args().any(|a| a == "--skip-intro");
     if skip_intro {

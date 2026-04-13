@@ -5,6 +5,7 @@
 //! are driven by [`Action`]s (see [`App::handle_action`]).
 
 use crate::input::Action;
+use crate::terminology::Terms;
 
 /// A side-effect requested by [`App::handle_action`].
 ///
@@ -438,6 +439,8 @@ pub struct App {
     pub intro: IntroState,
     /// State for the diff preview screen.
     pub diff: DiffState,
+    /// Active terminology (Beginner / Hybrid / Git).
+    pub terms: Terms,
 }
 
 impl Default for App {
@@ -462,6 +465,7 @@ impl App {
             help: HelpState::new(),
             intro: IntroState::new(),
             diff: DiffState::new(),
+            terms: Terms::new(crate::terminology::TermMode::Hybrid),
         }
     }
 

@@ -4,5 +4,6 @@ pub mod input;
 pub mod mascot;
 pub mod screens;
 pub mod settings;
+pub mod terminology;
 pub mod ui;
 pub mod update;

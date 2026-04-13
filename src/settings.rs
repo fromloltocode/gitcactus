@@ -6,9 +6,13 @@
 use std::fs;
 use std::path::PathBuf;
 
+use crate::terminology::TermMode;
+
 pub struct Settings {
     /// Skip the retro intro animation on startup.
     pub skip_intro: bool,
+    /// Which terminology mode to use.
+    pub term_mode: TermMode,
 }
 
 impl Settings {
@@ -16,14 +20,35 @@ impl Settings {
     pub fn load() -> Self {
         let path = match Self::config_path() {
             Some(p) => p,
-            None => return Self { skip_intro: false },
+            None => {
+                return Self {
+                    skip_intro: false,
+                    term_mode: TermMode::Hybrid,
+                }
+            }
         };
         let content = match fs::read_to_string(&path) {
             Ok(c) => c,
-            Err(_) => return Self { skip_intro: false },
+            Err(_) => {
+                return Self {
+                    skip_intro: false,
+                    term_mode: TermMode::Hybrid,
+                }
+            }
         };
         let skip_intro = content.lines().any(|l| l.trim() == "skip_intro=true");
-        Self { skip_intro }
+        let term_mode = content
+            .lines()
+            .find_map(|l| {
+                let l = l.trim();
+                l.strip_prefix("terminology=")
+                    .and_then(TermMode::parse)
+            })
+            .unwrap_or(TermMode::Hybrid);
+        Self {
+            skip_intro,
+            term_mode,
+        }
     }
 
     /// Mark the intro as seen so subsequent launches skip it.

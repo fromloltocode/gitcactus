@@ -17,7 +17,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let outer = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::DarkGray))
-        .title(" Diff Preview ")
+        .title(app.terms.title_diff())
         .title_alignment(Alignment::Center);
     let inner = outer.inner(area);
     frame.render_widget(outer, area);

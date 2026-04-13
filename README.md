@@ -30,6 +30,27 @@ GitCactus is a terminal-native Git assistant built in Rust. It aims to be modern
 - Placeholder screens for: Commit, Branches, History, Remote Sync, Help
 - Clean terminal setup and teardown
 
+## Beginner-Friendly Terminology
+
+GitCactus translates Git's technical vocabulary into clearer language to help new users learn. Three modes are available:
+
+| Concept     | Beginner         | Hybrid (default)              | Git            |
+|-------------|------------------|-------------------------------|----------------|
+| Commit      | Checkpoint       | Checkpoint (Commit)           | Commit         |
+| Branch      | Saved Path       | Saved Path (Branch)           | Branch         |
+| Staged      | Ready to Save    | Ready to Save (Staged)        | Staged         |
+| Modified    | Changed          | Changed (Modified)            | Modified       |
+| Untracked   | New Files        | New Files (Untracked)         | Untracked      |
+| Diff        | Compare Changes  | Compare Changes (Diff)        | Diff           |
+| HEAD        | Last Saved       | Last Saved (HEAD)             | HEAD           |
+
+**Philosophy**: Git semantics stay real — the UI just helps translate concepts into clearer language. Hybrid mode (the default) teaches both the friendly label and the real Git term, so users gradually learn the standard vocabulary.
+
+Set your preferred mode in `~/.config/gitcactus/settings`:
+```
+terminology=beginner
+```
+
 ## Safety philosophy
 
 GitCactus will **never silently mutate your repository**. Every future git action will be:

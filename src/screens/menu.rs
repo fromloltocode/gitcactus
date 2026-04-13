@@ -76,7 +76,8 @@ fn render_menu(frame: &mut Frame, area: Rect, app: &App) {
     let items: Vec<ListItem> = MENU_ITEMS
         .iter()
         .enumerate()
-        .map(|(i, (label, _))| {
+        .map(|(i, _)| {
+            let label = app.terms.menu_label(i);
             let style = if i == app.menu_index {
                 Style::default()
                     .fg(Color::Black)
