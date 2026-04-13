@@ -29,6 +29,10 @@ pub enum Action {
     Confirm,
     /// Explicit no / deny (n).
     Deny,
+    /// A typed character (used in text-input mode).
+    Char(char),
+    /// Backspace (used in text-input mode).
+    Backspace,
     /// A key that doesn't map to a specific command — used for
     /// "press any key to continue" screens.
     Other,
@@ -50,6 +54,23 @@ pub fn map_key(code: KeyCode) -> Action {
         KeyCode::Char('r') => Action::Refresh,
         KeyCode::Char('y') => Action::Confirm,
         KeyCode::Char('n') => Action::Deny,
+        _ => Action::Other,
+    }
+}
+
+/// Convert a raw [`KeyCode`] into an [`Action`] while in text-input mode.
+///
+/// Most character keys produce [`Action::Char`] so they can be typed into a
+/// text field. Only special keys (Esc, Enter, arrows, Backspace) retain
+/// their semantic meaning.
+pub fn map_key_text(code: KeyCode) -> Action {
+    match code {
+        KeyCode::Esc => Action::Back,
+        KeyCode::Enter => Action::Select,
+        KeyCode::Backspace => Action::Backspace,
+        KeyCode::Up => Action::MoveUp,
+        KeyCode::Down => Action::MoveDown,
+        KeyCode::Char(c) => Action::Char(c),
         _ => Action::Other,
     }
 }

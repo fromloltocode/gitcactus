@@ -54,6 +54,17 @@ pub fn update_tip(is_up_to_date: bool) -> &'static str {
     }
 }
 
+/// Tip shown on the commit screen sidebar.
+pub fn commit_tip(staged_count: usize, has_message: bool) -> &'static str {
+    if staged_count == 0 {
+        "No files staged yet! Head to Stage Changes first to pick what goes in your commit."
+    } else if !has_message {
+        "Write a short message describing what changed and why. Good messages help future-you!"
+    } else {
+        "Looking good! Press Enter to review and confirm your commit."
+    }
+}
+
 /// Tip shown on the stage screen sidebar.
 pub fn stage_tip(selected: usize, total: usize) -> &'static str {
     if total == 0 {

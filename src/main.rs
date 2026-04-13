@@ -17,10 +17,11 @@ use crossterm::terminal::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use app::{App, Effect, StageState, UpdateState};
+use app::{App, CommitState, Effect, StageState, UpdateState};
+use git::commit::create_commit;
 use git::stage::stage_files;
 use git::status::read_status;
-use input::map_key;
+use input::{map_key, map_key_text};
 
 fn main() -> io::Result<()> {
     // Handle --version flag before entering TUI mode.
@@ -66,7 +67,11 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                     continue;
                 }
 
-                let action = map_key(key.code);
+                let action = if app.needs_text_input() {
+                    map_key_text(key.code)
+                } else {
+                    map_key(key.code)
+                };
                 let effect = app.handle_action(action);
 
                 match effect {
@@ -99,6 +104,28 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                     Effect::InitUpdate => {
                         app.update = UpdateState::new();
                         app.update.info = Some(update::check_for_updates());
+                    }
+                    Effect::InitCommit => {
+                        repo_status = read_status(".");
+                        app.commit = CommitState::from_repo(&repo_status);
+                    }
+                    Effect::CreateCommit(msg) => {
+                        match create_commit(".", &msg) {
+                            Ok(hash) => {
+                                app.commit.result_msg = Some((
+                                    format!("Commit {hash} created successfully!"),
+                                    true,
+                                ));
+                            }
+                            Err(e) => {
+                                app.commit.result_msg = Some((e, false));
+                            }
+                        }
+                        app.commit.mode = app::CommitMode::Result;
+                    }
+                    Effect::RefreshAfterCommit => {
+                        repo_status = read_status(".");
+                        app.back_to_menu();
                     }
                 }
             }

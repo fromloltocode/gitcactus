@@ -1,3 +1,4 @@
+pub mod commit;
 pub mod menu;
 pub mod stage;
 pub mod status;

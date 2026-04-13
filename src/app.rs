@@ -24,6 +24,12 @@ pub enum Effect {
     StageFiles(Vec<String>),
     /// Initialize the update screen (check for updates).
     InitUpdate,
+    /// Initialize the commit screen (refresh status for staged file list).
+    InitCommit,
+    /// Create a commit with the given message.
+    CreateCommit(String),
+    /// Refresh status after a successful commit.
+    RefreshAfterCommit,
 }
 
 /// The screens the app can display.
@@ -214,6 +220,73 @@ impl UpdateState {
     }
 }
 
+// ── Commit screen state ─────────────────────────────────────────────
+
+/// Sub-mode for the commit screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitMode {
+    /// Typing the commit message.
+    Editing,
+    /// Confirmation dialog visible.
+    Confirm,
+    /// Showing result (success/error).
+    Result,
+}
+
+/// Maximum commit message length (single-line for now).
+pub const MAX_COMMIT_MSG_LEN: usize = 200;
+
+/// State for the Commit Changes screen.
+pub struct CommitState {
+    /// The commit message being composed.
+    pub message: String,
+    /// Files currently in the staging area (read from repo status).
+    pub staged_files: Vec<String>,
+    /// Total count of staged files.
+    pub staged_count: usize,
+    /// Current sub-mode.
+    pub mode: CommitMode,
+    /// Result message after committing (message, is_success).
+    pub result_msg: Option<(String, bool)>,
+}
+
+impl CommitState {
+    pub fn new() -> Self {
+        Self {
+            message: String::new(),
+            staged_files: Vec::new(),
+            staged_count: 0,
+            mode: CommitMode::Editing,
+            result_msg: None,
+        }
+    }
+
+    /// Populate from a `RepoStatus`.
+    pub fn from_repo(repo: &crate::git::status::RepoStatus) -> Self {
+        Self {
+            message: String::new(),
+            staged_files: repo.staged_files.clone(),
+            staged_count: repo.staged.unwrap_or(0),
+            mode: CommitMode::Editing,
+            result_msg: None,
+        }
+    }
+
+    pub fn push_char(&mut self, c: char) {
+        if self.message.len() < MAX_COMMIT_MSG_LEN {
+            self.message.push(c);
+        }
+    }
+
+    pub fn pop_char(&mut self) {
+        self.message.pop();
+    }
+
+    pub fn can_commit(&self) -> bool {
+        self.staged_count > 0 && !self.message.trim().is_empty()
+    }
+}
+
 pub struct App {
     /// Which screen is currently shown.
     pub screen: Screen,
@@ -225,6 +298,8 @@ pub struct App {
     pub stage: StageState,
     /// State for the Check for Updates screen.
     pub update: UpdateState,
+    /// State for the Commit Changes screen.
+    pub commit: CommitState,
 }
 
 impl App {
@@ -241,7 +316,17 @@ impl App {
                 result_msg: None,
             },
             update: UpdateState::new(),
+            commit: CommitState::new(),
         }
+    }
+
+    /// Whether the app is in a text-input mode that needs raw characters.
+    ///
+    /// When true, the event loop should use [`input::map_key_text`] instead
+    /// of [`input::map_key`] so that typed characters reach the app as
+    /// [`Action::Char`] rather than being mapped to navigation actions.
+    pub fn needs_text_input(&self) -> bool {
+        self.screen == Screen::Commit && self.commit.mode == CommitMode::Editing
     }
 
     /// Move menu selection up.
@@ -307,6 +392,7 @@ impl App {
                         Screen::Status => Effect::RefreshStatus,
                         Screen::Stage => Effect::RefreshAndResetStage,
                         Screen::Update => Effect::InitUpdate,
+                        Screen::Commit => Effect::InitCommit,
                         _ => Effect::None,
                     }
                 }
@@ -360,6 +446,46 @@ impl App {
                 StageMode::Result => {
                     // Any key dismisses the result and refreshes.
                     Effect::RefreshAndResetStage
+                }
+            },
+
+            // ── Commit ────────────────────────────────────────────
+            Screen::Commit => match self.commit.mode {
+                CommitMode::Editing => match action {
+                    Action::Back => {
+                        self.back_to_menu();
+                        Effect::None
+                    }
+                    Action::Char(c) => {
+                        self.commit.push_char(c);
+                        Effect::None
+                    }
+                    Action::Backspace => {
+                        self.commit.pop_char();
+                        Effect::None
+                    }
+                    Action::Select => {
+                        if self.commit.can_commit() {
+                            self.commit.mode = CommitMode::Confirm;
+                        }
+                        Effect::None
+                    }
+                    _ => Effect::None,
+                },
+                CommitMode::Confirm => match action {
+                    Action::Confirm | Action::Select => {
+                        let msg = self.commit.message.trim().to_string();
+                        Effect::CreateCommit(msg)
+                    }
+                    Action::Deny | Action::Back => {
+                        self.commit.mode = CommitMode::Editing;
+                        Effect::None
+                    }
+                    _ => Effect::None,
+                },
+                CommitMode::Result => {
+                    // Any key: refresh and go back to menu.
+                    Effect::RefreshAfterCommit
                 }
             },
 
