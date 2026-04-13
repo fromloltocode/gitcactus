@@ -214,7 +214,8 @@ impl Terms {
             5 => self.menu_sync(),
             6 => "Controls",
             7 => "Check for Updates",
-            8 => "Quit",
+            8 => "Settings",
+            9 => "Quit",
             _ => "???",
         }
     }

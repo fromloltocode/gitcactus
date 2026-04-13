@@ -66,6 +66,24 @@ impl Settings {
         }
     }
 
+    /// Persist the terminology mode to the settings file.
+    pub fn save_term_mode(mode: TermMode) {
+        if let Some(path) = Self::config_path() {
+            if let Some(dir) = path.parent() {
+                let _ = fs::create_dir_all(dir);
+            }
+            let existing = fs::read_to_string(&path).unwrap_or_default();
+            // Remove any existing terminology= line, then append the new one.
+            let filtered: String = existing
+                .lines()
+                .filter(|l| !l.trim().starts_with("terminology="))
+                .map(|l| format!("{l}\n"))
+                .collect();
+            let new = format!("{filtered}terminology={}\n", mode.as_str());
+            let _ = fs::write(&path, new);
+        }
+    }
+
     fn config_path() -> Option<PathBuf> {
         let home = std::env::var("HOME").ok()?;
         Some(

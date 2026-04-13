@@ -3,6 +3,7 @@ pub mod diff;
 pub mod help;
 pub mod intro;
 pub mod menu;
+pub mod settings_screen;
 pub mod stage;
 pub mod status;
 pub mod title;

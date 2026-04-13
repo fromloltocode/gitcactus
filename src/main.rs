@@ -169,5 +169,8 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
             Settings::mark_intro_seen();
             app.screen = Screen::Title;
         }
+        Effect::SaveTermMode(mode) => {
+            Settings::save_term_mode(mode);
+        }
     }
 }

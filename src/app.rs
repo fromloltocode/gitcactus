@@ -35,6 +35,8 @@ pub enum Effect {
     LoadDiff(String),
     /// The intro animation completed — mark it as seen and advance.
     IntroFinished,
+    /// Persist the selected terminology mode to the settings file.
+    SaveTermMode(crate::terminology::TermMode),
 }
 
 /// The screens the app can display.
@@ -52,6 +54,7 @@ pub enum Screen {
     Help,
     Update,
     DiffPreview,
+    Settings,
 }
 
 /// Main menu items, in display order.
@@ -64,11 +67,12 @@ pub const MENU_ITEMS: &[(&str, Screen)] = &[
     ("Remote Sync", Screen::RemoteSync),
     ("Controls", Screen::Help),
     ("Check for Updates", Screen::Update),
+    ("Settings", Screen::Settings),
     ("Quit", Screen::Title), // sentinel — handled specially
 ];
 
 /// Index of the "Quit" entry in MENU_ITEMS.
-pub const QUIT_INDEX: usize = 8;
+pub const QUIT_INDEX: usize = 9;
 
 // ── Stage screen state ───────────────────────────────────────────────
 
@@ -420,6 +424,57 @@ impl DiffState {
     }
 }
 
+// ── Settings screen state ───────────────────────────────────────────
+
+/// The terminology modes available for selection, in display order.
+pub const SETTINGS_TERM_MODES: &[crate::terminology::TermMode] = &[
+    crate::terminology::TermMode::Beginner,
+    crate::terminology::TermMode::Hybrid,
+    crate::terminology::TermMode::Git,
+];
+
+/// State for the Settings screen.
+pub struct SettingsState {
+    /// Currently highlighted mode index.
+    pub cursor: usize,
+}
+
+impl Default for SettingsState {
+    fn default() -> Self { Self::new() }
+}
+
+impl SettingsState {
+    pub fn new() -> Self {
+        Self { cursor: 0 }
+    }
+
+    /// Initialize cursor to match the currently active mode.
+    pub fn from_active(mode: crate::terminology::TermMode) -> Self {
+        let cursor = SETTINGS_TERM_MODES
+            .iter()
+            .position(|&m| m == mode)
+            .unwrap_or(1); // default to Hybrid (index 1)
+        Self { cursor }
+    }
+
+    pub fn move_up(&mut self) {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+        }
+    }
+
+    pub fn move_down(&mut self) {
+        if self.cursor < SETTINGS_TERM_MODES.len() - 1 {
+            self.cursor += 1;
+        }
+    }
+
+    /// Return the mode at the current cursor position.
+    pub fn selected_mode(&self) -> crate::terminology::TermMode {
+        SETTINGS_TERM_MODES[self.cursor]
+    }
+}
+
 pub struct App {
     /// Which screen is currently shown.
     pub screen: Screen,
@@ -441,6 +496,8 @@ pub struct App {
     pub diff: DiffState,
     /// Active terminology (Beginner / Hybrid / Git).
     pub terms: Terms,
+    /// State for the Settings screen.
+    pub settings_state: SettingsState,
 }
 
 impl Default for App {
@@ -466,6 +523,7 @@ impl App {
             intro: IntroState::new(),
             diff: DiffState::new(),
             terms: Terms::new(crate::terminology::TermMode::Hybrid),
+            settings_state: SettingsState::new(),
         }
     }
 
@@ -551,6 +609,10 @@ impl App {
                         Screen::Commit => Effect::InitCommit,
                         Screen::Help => {
                             self.help = HelpState::new();
+                            Effect::None
+                        }
+                        Screen::Settings => {
+                            self.settings_state = SettingsState::from_active(self.terms.mode);
                             Effect::None
                         }
                         _ => Effect::None,
@@ -689,6 +751,29 @@ impl App {
                 Action::MoveUp => {
                     self.help.prev_page();
                     Effect::None
+                }
+                _ => Effect::None,
+            },
+
+            // ── Settings ──────────────────────────────────────────
+            Screen::Settings => match action {
+                Action::Quit => Effect::Quit,
+                Action::Back => {
+                    self.back_to_menu();
+                    Effect::None
+                }
+                Action::MoveUp => {
+                    self.settings_state.move_up();
+                    Effect::None
+                }
+                Action::MoveDown => {
+                    self.settings_state.move_down();
+                    Effect::None
+                }
+                Action::Select => {
+                    let mode = self.settings_state.selected_mode();
+                    self.terms = Terms::new(mode);
+                    Effect::SaveTermMode(mode)
                 }
                 _ => Effect::None,
             },

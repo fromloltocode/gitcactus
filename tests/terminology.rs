@@ -114,7 +114,7 @@ fn sync_same_in_all_modes() {
 #[test]
 fn menu_label_covers_all_items() {
     let t = Terms::new(TermMode::Hybrid);
-    for i in 0..=8 {
+    for i in 0..=9 {
         let label = t.menu_label(i);
         assert!(!label.is_empty(), "Menu label {i} should not be empty");
         assert_ne!(label, "???", "Menu label {i} should not be unknown");
