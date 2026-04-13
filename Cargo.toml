@@ -1,6 +1,11 @@
 [package]
 name = "gitcactus"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+description = "A retro-inspired terminal Git assistant"
+license = "MIT"
 
 [dependencies]
+ratatui = "0.28"
+crossterm = "0.28"
+git2 = "0.19"
