@@ -242,6 +242,14 @@ impl Terms {
         }
     }
 
+    pub fn title_history(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => " Checkpoint History ",
+            TermMode::Hybrid => " History ",
+            TermMode::Git => " Commit History ",
+        }
+    }
+
     pub fn title_diff(&self) -> &'static str {
         match self.mode {
             TermMode::Beginner => " Compare Changes ",

@@ -172,5 +172,9 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
         Effect::SaveTermMode(mode) => {
             Settings::save_term_mode(mode);
         }
+        Effect::LoadHistory => {
+            app.history.result = git::history::load_history(".");
+            app.history.cursor = 0;
+        }
     }
 }

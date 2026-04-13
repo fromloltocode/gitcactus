@@ -31,7 +31,6 @@ const READ_ONLY_SCREENS: &[Screen] = &[
     Screen::Help,
     Screen::DiffPreview,
     Screen::Branches,
-    Screen::History,
     Screen::RemoteSync,
 ];
 

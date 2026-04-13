@@ -37,6 +37,8 @@ pub enum Effect {
     IntroFinished,
     /// Persist the selected terminology mode to the settings file.
     SaveTermMode(crate::terminology::TermMode),
+    /// Load commit history (read-only).
+    LoadHistory,
 }
 
 /// The screens the app can display.
@@ -424,6 +426,46 @@ impl DiffState {
     }
 }
 
+// ── History screen state ────────────────────────────────────────────
+
+/// State for the commit history screen.
+pub struct HistoryState {
+    /// Loaded history data.
+    pub result: crate::git::history::HistoryResult,
+    /// Currently highlighted entry index.
+    pub cursor: usize,
+}
+
+impl Default for HistoryState {
+    fn default() -> Self { Self::new() }
+}
+
+impl HistoryState {
+    pub fn new() -> Self {
+        Self {
+            result: crate::git::history::HistoryResult {
+                entries: vec![],
+                is_real: false,
+                error: None,
+            },
+            cursor: 0,
+        }
+    }
+
+    pub fn move_up(&mut self) {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+        }
+    }
+
+    pub fn move_down(&mut self) {
+        let max = self.result.entries.len().saturating_sub(1);
+        if self.cursor < max {
+            self.cursor += 1;
+        }
+    }
+}
+
 // ── Settings screen state ───────────────────────────────────────────
 
 /// The terminology modes available for selection, in display order.
@@ -498,6 +540,8 @@ pub struct App {
     pub terms: Terms,
     /// State for the Settings screen.
     pub settings_state: SettingsState,
+    /// State for the History screen.
+    pub history: HistoryState,
 }
 
 impl Default for App {
@@ -524,6 +568,7 @@ impl App {
             diff: DiffState::new(),
             terms: Terms::new(crate::terminology::TermMode::Hybrid),
             settings_state: SettingsState::new(),
+            history: HistoryState::new(),
         }
     }
 
@@ -615,6 +660,7 @@ impl App {
                             self.settings_state = SettingsState::from_active(self.terms.mode);
                             Effect::None
                         }
+                        Screen::History => Effect::LoadHistory,
                         _ => Effect::None,
                     }
                 }
@@ -752,6 +798,25 @@ impl App {
                     self.help.prev_page();
                     Effect::None
                 }
+                _ => Effect::None,
+            },
+
+            // ── History (read-only) ───────────────────────────────
+            Screen::History => match action {
+                Action::Quit => Effect::Quit,
+                Action::Back => {
+                    self.back_to_menu();
+                    Effect::None
+                }
+                Action::MoveUp => {
+                    self.history.move_up();
+                    Effect::None
+                }
+                Action::MoveDown => {
+                    self.history.move_down();
+                    Effect::None
+                }
+                Action::Refresh => Effect::LoadHistory,
                 _ => Effect::None,
             },
 
