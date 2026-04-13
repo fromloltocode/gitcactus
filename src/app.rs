@@ -446,8 +446,12 @@ impl DiffState {
 pub struct HistoryState {
     /// Loaded history data.
     pub result: crate::git::history::HistoryResult,
-    /// Currently highlighted entry index.
+    /// Currently highlighted entry index *in the visible (filtered) list*.
     pub cursor: usize,
+    /// Current filter text. Empty means no filter.
+    pub filter: String,
+    /// Whether the user is actively typing in the filter input.
+    pub search_mode: bool,
 }
 
 impl Default for HistoryState {
@@ -463,6 +467,47 @@ impl HistoryState {
                 error: None,
             },
             cursor: 0,
+            filter: String::new(),
+            search_mode: false,
+        }
+    }
+
+    /// Return the indices (in `result.entries`) of entries that match
+    /// the current filter. Empty filter returns every index.
+    ///
+    /// Matching is case-insensitive against summary, author, and short hash.
+    pub fn visible_indices(&self) -> Vec<usize> {
+        if self.filter.is_empty() {
+            return (0..self.result.entries.len()).collect();
+        }
+        let needle = self.filter.to_lowercase();
+        self.result
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| {
+                e.summary.to_lowercase().contains(&needle)
+                    || e.author.to_lowercase().contains(&needle)
+                    || e.short_hash.to_lowercase().contains(&needle)
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// Entry currently under the cursor, honoring the filter.
+    pub fn selected_entry(&self) -> Option<&crate::git::history::HistoryEntry> {
+        let visible = self.visible_indices();
+        visible
+            .get(self.cursor)
+            .and_then(|&i| self.result.entries.get(i))
+    }
+
+    /// Clamp the cursor into the currently visible range.
+    pub fn clamp_cursor(&mut self) {
+        let visible_count = self.visible_indices().len();
+        let max = visible_count.saturating_sub(1);
+        if self.cursor > max {
+            self.cursor = max;
         }
     }
 
@@ -473,10 +518,34 @@ impl HistoryState {
     }
 
     pub fn move_down(&mut self) {
-        let max = self.result.entries.len().saturating_sub(1);
+        let max = self.visible_indices().len().saturating_sub(1);
         if self.cursor < max {
             self.cursor += 1;
         }
+    }
+
+    pub fn enter_search(&mut self) {
+        self.search_mode = true;
+    }
+
+    pub fn exit_search(&mut self) {
+        self.search_mode = false;
+    }
+
+    pub fn push_filter_char(&mut self, c: char) {
+        self.filter.push(c);
+        self.cursor = 0;
+    }
+
+    pub fn pop_filter_char(&mut self) {
+        self.filter.pop();
+        self.cursor = 0;
+    }
+
+    pub fn clear_filter(&mut self) {
+        self.filter.clear();
+        self.search_mode = false;
+        self.cursor = 0;
     }
 }
 
@@ -537,11 +606,16 @@ pub const MAX_BRANCH_NAME_LEN: usize = 100;
 /// State for the Branches screen.
 pub struct BranchesState {
     pub branches: crate::git::branches::BranchListResult,
+    /// Currently highlighted entry index *in the visible (filtered) list*.
     pub cursor: usize,
     pub mode: BranchesMode,
     pub result_msg: Option<(String, bool)>,
     /// Buffer for the new-branch name being typed.
     pub new_name: String,
+    /// Current filter text. Empty means no filter.
+    pub filter: String,
+    /// Whether the user is actively typing in the filter input.
+    pub search_mode: bool,
 }
 
 impl Default for BranchesState {
@@ -559,6 +633,8 @@ impl BranchesState {
             mode: BranchesMode::Browse,
             result_msg: None,
             new_name: String::new(),
+            filter: String::new(),
+            search_mode: false,
         }
     }
 
@@ -572,6 +648,27 @@ impl BranchesState {
         self.new_name.pop();
     }
 
+    /// Return the indices (in `branches.branches`) of entries that match
+    /// the current filter. Empty filter returns every index.
+    ///
+    /// Matching is case-insensitive against branch name and commit summary.
+    pub fn visible_indices(&self) -> Vec<usize> {
+        if self.filter.is_empty() {
+            return (0..self.branches.branches.len()).collect();
+        }
+        let needle = self.filter.to_lowercase();
+        self.branches
+            .branches
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| {
+                b.name.to_lowercase().contains(&needle)
+                    || b.summary.to_lowercase().contains(&needle)
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
     pub fn move_up(&mut self) {
         if self.cursor > 0 {
             self.cursor -= 1;
@@ -579,26 +676,59 @@ impl BranchesState {
     }
 
     pub fn move_down(&mut self) {
-        let max = self.branches.branches.len().saturating_sub(1);
+        let max = self.visible_indices().len().saturating_sub(1);
         if self.cursor < max {
             self.cursor += 1;
         }
     }
 
-    /// Return the name of the currently highlighted branch, if any.
-    pub fn selected_name(&self) -> Option<&str> {
-        self.branches
-            .branches
+    /// Return the name of the currently highlighted branch, honoring filter.
+    pub fn selected_name(&self) -> Option<String> {
+        let visible = self.visible_indices();
+        visible
             .get(self.cursor)
-            .map(|b| b.name.as_str())
+            .and_then(|&i| self.branches.branches.get(i))
+            .map(|b| b.name.clone())
     }
 
     /// Whether the highlighted branch is the current one.
     pub fn selected_is_current(&self) -> bool {
-        self.branches
-            .branches
+        let visible = self.visible_indices();
+        visible
             .get(self.cursor)
+            .and_then(|&i| self.branches.branches.get(i))
             .is_some_and(|b| b.is_current)
+    }
+
+    pub fn clamp_cursor(&mut self) {
+        let max = self.visible_indices().len().saturating_sub(1);
+        if self.cursor > max {
+            self.cursor = max;
+        }
+    }
+
+    pub fn enter_search(&mut self) {
+        self.search_mode = true;
+    }
+
+    pub fn exit_search(&mut self) {
+        self.search_mode = false;
+    }
+
+    pub fn push_filter_char(&mut self, c: char) {
+        self.filter.push(c);
+        self.cursor = 0;
+    }
+
+    pub fn pop_filter_char(&mut self) {
+        self.filter.pop();
+        self.cursor = 0;
+    }
+
+    pub fn clear_filter(&mut self) {
+        self.filter.clear();
+        self.search_mode = false;
+        self.cursor = 0;
     }
 }
 
@@ -723,6 +853,8 @@ impl App {
         (self.screen == Screen::Commit && self.commit.mode == CommitMode::Editing)
             || (self.screen == Screen::Branches
                 && self.branches_state.mode == BranchesMode::Creating)
+            || (self.screen == Screen::History && self.history.search_mode)
+            || (self.screen == Screen::Branches && self.branches_state.search_mode)
     }
 
     /// Move menu selection up.
@@ -949,50 +1081,84 @@ impl App {
 
             // ── Branches ──────────────────────────────────────────
             Screen::Branches => match self.branches_state.mode {
-                BranchesMode::Browse => match action {
-                    Action::Quit => Effect::Quit,
-                    Action::Back => {
-                        self.back_to_menu();
-                        Effect::None
+                BranchesMode::Browse => {
+                    // Search mode: typing goes into the filter buffer.
+                    if self.branches_state.search_mode {
+                        return match action {
+                            Action::Back => {
+                                // Esc cancels search and clears the filter.
+                                self.branches_state.clear_filter();
+                                Effect::None
+                            }
+                            Action::Select => {
+                                // Enter applies the filter and exits search mode.
+                                self.branches_state.exit_search();
+                                Effect::None
+                            }
+                            Action::Char(c) => {
+                                self.branches_state.push_filter_char(c);
+                                Effect::None
+                            }
+                            Action::Backspace => {
+                                self.branches_state.pop_filter_char();
+                                Effect::None
+                            }
+                            _ => Effect::None,
+                        };
                     }
-                    Action::MoveUp => {
-                        self.branches_state.move_up();
-                        Effect::None
-                    }
-                    Action::MoveDown => {
-                        self.branches_state.move_down();
-                        Effect::None
-                    }
-                    Action::Refresh => Effect::LoadBranches,
-                    Action::Deny => {
-                        // 'n' starts a "New Game" (create branch) from browse mode.
-                        self.branches_state.new_name.clear();
-                        self.branches_state.mode = BranchesMode::Creating;
-                        Effect::None
-                    }
-                    Action::Select => {
-                        if self.branches_state.selected_is_current() {
-                            // Already on this branch — friendly no-op message.
-                            self.branches_state.result_msg = Some((
-                                "You're already on this path!".into(),
-                                true,
-                            ));
-                            self.branches_state.mode = BranchesMode::Result;
-                            Effect::None
-                        } else if let Some(name) = self.branches_state.selected_name() {
-                            let _ = name; // used for the confirmation dialog
-                            self.branches_state.mode = BranchesMode::ConfirmSwitch;
-                            Effect::None
-                        } else {
+
+                    match action {
+                        Action::Quit => Effect::Quit,
+                        Action::Back => {
+                            // If a filter is active, clear it first.
+                            if !self.branches_state.filter.is_empty() {
+                                self.branches_state.clear_filter();
+                                Effect::None
+                            } else {
+                                self.back_to_menu();
+                                Effect::None
+                            }
+                        }
+                        Action::MoveUp => {
+                            self.branches_state.move_up();
                             Effect::None
                         }
+                        Action::MoveDown => {
+                            self.branches_state.move_down();
+                            Effect::None
+                        }
+                        Action::Refresh => Effect::LoadBranches,
+                        Action::Search => {
+                            self.branches_state.enter_search();
+                            Effect::None
+                        }
+                        Action::Deny => {
+                            // 'n' starts a "New Game" (create branch).
+                            self.branches_state.new_name.clear();
+                            self.branches_state.mode = BranchesMode::Creating;
+                            Effect::None
+                        }
+                        Action::Select => {
+                            if self.branches_state.selected_is_current() {
+                                self.branches_state.result_msg = Some((
+                                    "You're already on this path!".into(),
+                                    true,
+                                ));
+                                self.branches_state.mode = BranchesMode::Result;
+                                Effect::None
+                            } else if self.branches_state.selected_name().is_some() {
+                                self.branches_state.mode = BranchesMode::ConfirmSwitch;
+                                Effect::None
+                            } else {
+                                Effect::None
+                            }
+                        }
+                        _ => Effect::None,
                     }
-                    _ => Effect::None,
-                },
+                }
                 BranchesMode::ConfirmSwitch => match action {
                     Action::Confirm | Action::Select => {
                         if let Some(name) = self.branches_state.selected_name() {
-                            let name = name.to_string();
                             Effect::SwitchBranch(name)
                         } else {
                             self.branches_state.mode = BranchesMode::Browse;
@@ -1037,42 +1203,79 @@ impl App {
             },
 
             // ── History (read-only) ───────────────────────────────
-            Screen::History => match action {
-                Action::Quit => Effect::Quit,
-                Action::Back => {
-                    self.back_to_menu();
-                    Effect::None
+            Screen::History => {
+                // Search mode: typing goes into the filter buffer.
+                if self.history.search_mode {
+                    return match action {
+                        Action::Back => {
+                            // Esc cancels search and clears the filter.
+                            self.history.clear_filter();
+                            Effect::None
+                        }
+                        Action::Select => {
+                            // Enter applies the filter and exits search mode.
+                            self.history.exit_search();
+                            Effect::None
+                        }
+                        Action::Char(c) => {
+                            self.history.push_filter_char(c);
+                            Effect::None
+                        }
+                        Action::Backspace => {
+                            self.history.pop_filter_char();
+                            Effect::None
+                        }
+                        _ => Effect::None,
+                    };
                 }
-                Action::MoveUp => {
-                    self.history.move_up();
-                    Effect::None
-                }
-                Action::MoveDown => {
-                    self.history.move_down();
-                    Effect::None
-                }
-                Action::Refresh => Effect::LoadHistory,
-                Action::Select => {
-                    if let Some(entry) = self.history.result.entries.get(self.history.cursor) {
-                        let hash = entry.full_hash.clone();
-                        self.screen = Screen::CommitDetails;
-                        Effect::LoadCommitDetails(hash)
-                    } else {
+
+                match action {
+                    Action::Quit => Effect::Quit,
+                    Action::Back => {
+                        // If a filter is active in browse mode, clear it first.
+                        if !self.history.filter.is_empty() {
+                            self.history.clear_filter();
+                            Effect::None
+                        } else {
+                            self.back_to_menu();
+                            Effect::None
+                        }
+                    }
+                    Action::MoveUp => {
+                        self.history.move_up();
                         Effect::None
                     }
-                }
-                Action::Preview => {
-                    if let Some(entry) = self.history.result.entries.get(self.history.cursor) {
-                        let hash = entry.full_hash.clone();
-                        self.diff.return_to = Screen::History;
-                        self.screen = Screen::DiffPreview;
-                        Effect::LoadCommitDiff(hash)
-                    } else {
+                    Action::MoveDown => {
+                        self.history.move_down();
                         Effect::None
                     }
+                    Action::Refresh => Effect::LoadHistory,
+                    Action::Search => {
+                        self.history.enter_search();
+                        Effect::None
+                    }
+                    Action::Select => {
+                        if let Some(entry) = self.history.selected_entry() {
+                            let hash = entry.full_hash.clone();
+                            self.screen = Screen::CommitDetails;
+                            Effect::LoadCommitDetails(hash)
+                        } else {
+                            Effect::None
+                        }
+                    }
+                    Action::Preview => {
+                        if let Some(entry) = self.history.selected_entry() {
+                            let hash = entry.full_hash.clone();
+                            self.diff.return_to = Screen::History;
+                            self.screen = Screen::DiffPreview;
+                            Effect::LoadCommitDiff(hash)
+                        } else {
+                            Effect::None
+                        }
+                    }
+                    _ => Effect::None,
                 }
-                _ => Effect::None,
-            },
+            }
 
             // ── Commit Details (read-only) ────────────────────────
             Screen::CommitDetails => match action {

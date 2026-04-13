@@ -33,6 +33,8 @@ pub enum Action {
     Char(char),
     /// Preview / inspect (d).
     Preview,
+    /// Open search / filter mode (/).
+    Search,
     /// Backspace (used in text-input mode).
     Backspace,
     /// A key that doesn't map to a specific command — used for
@@ -57,6 +59,7 @@ pub fn map_key(code: KeyCode) -> Action {
         KeyCode::Char('y') => Action::Confirm,
         KeyCode::Char('n') => Action::Deny,
         KeyCode::Char('d') => Action::Preview,
+        KeyCode::Char('/') => Action::Search,
         _ => Action::Other,
     }
 }

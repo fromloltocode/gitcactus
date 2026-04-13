@@ -82,19 +82,80 @@ fn render_list(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    // Header
-    let count = state.branches.branches.len();
-    let label = app.terms.branch();
-    lines.push(Line::from(Span::styled(
-        format!("  Local {label}s ({count})"),
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD),
-    )));
+    let visible = state.visible_indices();
+    let total_all = state.branches.branches.len();
+    let total_visible = visible.len();
+
+    // Header / search bar
+    if state.search_mode {
+        lines.push(Line::from(vec![
+            Span::styled(
+                "  / ",
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                if state.filter.is_empty() {
+                    "\u{2588}".to_string()
+                } else {
+                    format!("{}\u{2588}", state.filter)
+                },
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(
+                    "   ({total_visible}/{total_all} match{})",
+                    if total_visible == 1 { "" } else { "es" }
+                ),
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]));
+    } else if !state.filter.is_empty() {
+        lines.push(Line::from(vec![
+            Span::styled("  Filter: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                &state.filter,
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("   ({total_visible}/{total_all})   Esc to clear, / to edit"),
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]));
+    } else {
+        let label = app.terms.branch();
+        lines.push(Line::from(Span::styled(
+            format!("  Local {label}s ({total_all})"),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )));
+    }
     lines.push(Line::from(""));
 
-    for (i, branch) in state.branches.branches.iter().enumerate() {
-        let is_cursor = i == state.cursor;
+    // No results
+    if total_visible == 0 {
+        lines.push(Line::from(Span::styled(
+            "  No paths match this filter.",
+            Style::default().fg(Color::Yellow),
+        )));
+        lines.push(Line::from(Span::styled(
+            "  Edit the filter or press Esc to clear it.",
+            Style::default().fg(Color::DarkGray),
+        )));
+        let p = Paragraph::new(Text::from(lines));
+        frame.render_widget(p, inner);
+        return;
+    }
+
+    for (vi, &real_idx) in visible.iter().enumerate() {
+        let branch = &state.branches.branches[real_idx];
+        let is_cursor = vi == state.cursor;
 
         // Cursor indicator
         let cursor_char = if is_cursor { "\u{25B6}" } else { " " }; // ▶
@@ -173,9 +234,15 @@ fn render_side_panel(frame: &mut Frame, area: Rect, app: &App) {
 
     let branch_word = app.terms.branch();
     let new_action = app.terms.new_branch_action();
-    let tip_line = format!(
-        " A {branch_word} is another line of work. Press n for {new_action}!",
-    );
+    let tip_line = if app.branches_state.search_mode
+        || !app.branches_state.filter.is_empty()
+    {
+        format!(" Looking for a {branch_word}? Type to filter the list.")
+    } else {
+        format!(
+            " A {branch_word} is another line of work. Press n for {new_action} or / to search."
+        )
+    };
     let tip = Paragraph::new(Text::from(vec![
         Line::from(Span::styled(
             " Cactus says:",
@@ -223,6 +290,16 @@ fn render_side_panel(frame: &mut Frame, area: Rect, app: &App) {
 // ── Footer ───────────────────────────────────────────────────────────
 
 fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
+    if app.branches_state.search_mode {
+        render_help_bar(frame, area, &[
+            ("type", "filter"),
+            ("Backspace", "erase"),
+            ("Enter", "apply"),
+            ("Esc", "cancel"),
+        ]);
+        return;
+    }
+
     let selected_is_current = app.branches_state.selected_is_current();
     let new_action_label = app.terms.new_branch_action();
 
@@ -233,6 +310,7 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
         bindings.push(("Enter", "switch"));
     }
     bindings.push(("n", new_action_label));
+    bindings.push(("/", "search"));
     bindings.push(("r", "refresh"));
     bindings.push(("Esc", "back"));
     bindings.push(("q", "quit"));
@@ -242,7 +320,7 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
 // ── Confirmation dialog ──────────────────────────────────────────────
 
 fn render_confirm_dialog(frame: &mut Frame, area: Rect, app: &App) {
-    let name = app.branches_state.selected_name().unwrap_or("???");
+    let name = app.branches_state.selected_name().unwrap_or_else(|| "???".into());
     let dialog = centered_rect(60, 11, area);
     frame.render_widget(Clear, dialog);
 

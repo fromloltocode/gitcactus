@@ -48,11 +48,11 @@ fn branches_selected_name_and_current() {
     let mut s = BranchesState::new();
     s.branches = make_result(3, 1); // current is at index 1
 
-    assert_eq!(s.selected_name(), Some("branch-0"));
+    assert_eq!(s.selected_name().as_deref(), Some("branch-0"));
     assert!(!s.selected_is_current());
 
     s.move_down();
-    assert_eq!(s.selected_name(), Some("branch-1"));
+    assert_eq!(s.selected_name().as_deref(), Some("branch-1"));
     assert!(s.selected_is_current());
 }
 

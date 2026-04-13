@@ -175,14 +175,15 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
         Effect::LoadHistory => {
             app.history.result = git::history::load_history(".");
             app.history.cursor = 0;
+            // Preserve filter across refresh, but clamp cursor in case
+            // the new result set has fewer matches.
+            app.history.clamp_cursor();
         }
         Effect::LoadBranches => {
             app.branches_state.branches = git::branches::load_branches(".");
-            // Clamp cursor into new range.
-            let max = app.branches_state.branches.branches.len().saturating_sub(1);
-            if app.branches_state.cursor > max {
-                app.branches_state.cursor = max;
-            }
+            // Preserve filter across refresh, but clamp cursor in case
+            // the new result set has fewer matches.
+            app.branches_state.clamp_cursor();
         }
         Effect::LoadCommitDetails(hash) => {
             app.commit_details.details = git::commit_details::load_commit_details(".", &hash);
