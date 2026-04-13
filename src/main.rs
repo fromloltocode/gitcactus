@@ -193,6 +193,29 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
             app.diff.result = git::diff::get_commit_diff(".", &hash);
             app.diff.scroll = 0;
         }
+        Effect::CreateBranch(name) => {
+            use git::branches::CreateResult;
+            match git::branches::create_branch(".", &name) {
+                CreateResult::Ok(created) => {
+                    app.branches_state.result_msg =
+                        Some((format!("Created '{created}'."), true));
+                }
+                CreateResult::InvalidName(msg) => {
+                    app.branches_state.result_msg = Some((msg, false));
+                }
+                CreateResult::AlreadyExists => {
+                    app.branches_state.result_msg = Some((
+                        format!("A path named '{name}' already exists."),
+                        false,
+                    ));
+                }
+                CreateResult::Error(e) => {
+                    app.branches_state.result_msg = Some((e, false));
+                }
+            }
+            app.branches_state.new_name.clear();
+            app.branches_state.mode = app::BranchesMode::Result;
+        }
         Effect::SwitchBranch(name) => {
             use git::branches::SwitchResult;
             match git::branches::switch_branch(".", &name) {

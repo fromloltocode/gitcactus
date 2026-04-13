@@ -43,6 +43,8 @@ pub enum Effect {
     LoadBranches,
     /// Switch to the given branch name (after confirmation).
     SwitchBranch(String),
+    /// Create a new branch from HEAD with the given name.
+    CreateBranch(String),
     /// Load full details for the given commit hash (read-only).
     LoadCommitDetails(String),
     /// Load a diff for the given commit vs its parent (read-only).
@@ -523,9 +525,14 @@ pub enum BranchesMode {
     Browse,
     /// Confirmation dialog to switch branches.
     ConfirmSwitch,
+    /// Typing the name for a new branch ("New Game").
+    Creating,
     /// Showing a result message.
     Result,
 }
+
+/// Maximum branch-name length.
+pub const MAX_BRANCH_NAME_LEN: usize = 100;
 
 /// State for the Branches screen.
 pub struct BranchesState {
@@ -533,6 +540,8 @@ pub struct BranchesState {
     pub cursor: usize,
     pub mode: BranchesMode,
     pub result_msg: Option<(String, bool)>,
+    /// Buffer for the new-branch name being typed.
+    pub new_name: String,
 }
 
 impl Default for BranchesState {
@@ -549,7 +558,18 @@ impl BranchesState {
             cursor: 0,
             mode: BranchesMode::Browse,
             result_msg: None,
+            new_name: String::new(),
         }
+    }
+
+    pub fn push_name_char(&mut self, c: char) {
+        if self.new_name.len() < MAX_BRANCH_NAME_LEN {
+            self.new_name.push(c);
+        }
+    }
+
+    pub fn pop_name_char(&mut self) {
+        self.new_name.pop();
     }
 
     pub fn move_up(&mut self) {
@@ -700,7 +720,9 @@ impl App {
     /// of [`input::map_key`] so that typed characters reach the app as
     /// [`Action::Char`] rather than being mapped to navigation actions.
     pub fn needs_text_input(&self) -> bool {
-        self.screen == Screen::Commit && self.commit.mode == CommitMode::Editing
+        (self.screen == Screen::Commit && self.commit.mode == CommitMode::Editing)
+            || (self.screen == Screen::Branches
+                && self.branches_state.mode == BranchesMode::Creating)
     }
 
     /// Move menu selection up.
@@ -942,6 +964,12 @@ impl App {
                         Effect::None
                     }
                     Action::Refresh => Effect::LoadBranches,
+                    Action::Deny => {
+                        // 'n' starts a "New Game" (create branch) from browse mode.
+                        self.branches_state.new_name.clear();
+                        self.branches_state.mode = BranchesMode::Creating;
+                        Effect::None
+                    }
                     Action::Select => {
                         if self.branches_state.selected_is_current() {
                             // Already on this branch — friendly no-op message.
@@ -974,6 +1002,30 @@ impl App {
                     Action::Deny | Action::Back => {
                         self.branches_state.mode = BranchesMode::Browse;
                         Effect::None
+                    }
+                    _ => Effect::None,
+                },
+                BranchesMode::Creating => match action {
+                    Action::Back => {
+                        self.branches_state.new_name.clear();
+                        self.branches_state.mode = BranchesMode::Browse;
+                        Effect::None
+                    }
+                    Action::Char(c) => {
+                        self.branches_state.push_name_char(c);
+                        Effect::None
+                    }
+                    Action::Backspace => {
+                        self.branches_state.pop_name_char();
+                        Effect::None
+                    }
+                    Action::Select => {
+                        let name = self.branches_state.new_name.trim().to_string();
+                        if !name.is_empty() {
+                            Effect::CreateBranch(name)
+                        } else {
+                            Effect::None
+                        }
                     }
                     _ => Effect::None,
                 },

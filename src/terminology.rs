@@ -145,6 +145,42 @@ impl Terms {
         }
     }
 
+    /// Label for the branch-creation action.
+    pub fn new_branch_action(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => "New Game",
+            TermMode::Hybrid => "New Game (New Path)",
+            TermMode::Git => "Create Branch",
+        }
+    }
+
+    /// Title for the branch-creation dialog.
+    pub fn new_branch_title(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => " Start a New Game ",
+            TermMode::Hybrid => " Start a New Game (New Path) ",
+            TermMode::Git => " Create Branch ",
+        }
+    }
+
+    /// Short explanation shown in the creation dialog.
+    pub fn new_branch_description(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => {
+                "A new game creates a new path from your current progress. \
+                 Experiment freely — your main path stays safe."
+            }
+            TermMode::Hybrid => {
+                "A new game is a new path (branch) starting from your current \
+                 commit. Experiment freely — your main path stays safe."
+            }
+            TermMode::Git => {
+                "Create a new branch pointing at the current HEAD. \
+                 The new branch will diverge from here."
+            }
+        }
+    }
+
     pub fn merge(&self) -> &'static str {
         match self.mode {
             TermMode::Beginner => "Combine Paths",

@@ -39,6 +39,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     if app.branches_state.mode == BranchesMode::ConfirmSwitch {
         render_confirm_dialog(frame, area, app);
     }
+    if app.branches_state.mode == BranchesMode::Creating {
+        render_create_dialog(frame, area, app);
+    }
     if app.branches_state.mode == BranchesMode::Result {
         render_result_dialog(frame, area, app);
     }
@@ -169,8 +172,9 @@ fn render_side_panel(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(art, chunks[1]);
 
     let branch_word = app.terms.branch();
+    let new_action = app.terms.new_branch_action();
     let tip_line = format!(
-        " A {branch_word} is another line of work you can switch to.",
+        " A {branch_word} is another line of work. Press n for {new_action}!",
     );
     let tip = Paragraph::new(Text::from(vec![
         Line::from(Span::styled(
@@ -220,12 +224,15 @@ fn render_side_panel(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
     let selected_is_current = app.branches_state.selected_is_current();
+    let new_action_label = app.terms.new_branch_action();
+
     let mut bindings: Vec<(&str, &str)> = vec![
         ("\u{2191}/\u{2193}/w/s", "move"),
     ];
     if !selected_is_current && !app.branches_state.branches.branches.is_empty() {
         bindings.push(("Enter", "switch"));
     }
+    bindings.push(("n", new_action_label));
     bindings.push(("r", "refresh"));
     bindings.push(("Esc", "back"));
     bindings.push(("q", "quit"));
@@ -318,6 +325,64 @@ fn render_result_dialog(frame: &mut Frame, area: Rect, app: &App) {
         )),
     ]))
     .wrap(Wrap { trim: true });
+    frame.render_widget(text, inner);
+}
+
+// ── New Game (create branch) dialog ──────────────────────────────────
+
+fn render_create_dialog(frame: &mut Frame, area: Rect, app: &App) {
+    let dialog = centered_rect(65, 13, area);
+    frame.render_widget(Clear, dialog);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Magenta))
+        .title(app.terms.new_branch_title())
+        .title_alignment(Alignment::Center);
+    let inner = block.inner(dialog);
+    frame.render_widget(block, dialog);
+
+    let name = &app.branches_state.new_name;
+    let cursor = "\u{2588}"; // █
+
+    let text = Paragraph::new(Text::from(vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("  {}", app.terms.new_branch_description()),
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Name your new path:",
+            Style::default().fg(Color::White),
+        )),
+        Line::from(vec![
+            Span::styled("  > ", Style::default().fg(Color::Cyan)),
+            Span::styled(
+                if name.is_empty() {
+                    cursor.to_string()
+                } else {
+                    format!("{name}{cursor}")
+                },
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Allowed: letters, digits, - _ / .",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Enter", Style::default().fg(Color::Green)),
+            Span::styled(" create    ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Esc", Style::default().fg(Color::Red)),
+            Span::styled(" cancel", Style::default().fg(Color::DarkGray)),
+        ]),
+    ]))
+    .wrap(Wrap { trim: false });
     frame.render_widget(text, inner);
 }
 

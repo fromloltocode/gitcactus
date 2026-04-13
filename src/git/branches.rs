@@ -95,6 +95,62 @@ pub fn load_branches(path: &str) -> BranchListResult {
     }
 }
 
+/// Result of a branch-creation attempt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CreateResult {
+    Ok(String),
+    InvalidName(String),
+    AlreadyExists,
+    Error(String),
+}
+
+/// Create a new branch from HEAD, but do not switch to it.
+/// Kept safe: read-only name check and simple `branch()` call.
+pub fn create_branch(path: &str, name: &str) -> CreateResult {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return CreateResult::InvalidName("Name cannot be empty.".into());
+    }
+    // Disallow clearly invalid characters.
+    if trimmed.contains(' ')
+        || trimmed.contains("..")
+        || trimmed.starts_with('-')
+        || trimmed.starts_with('/')
+        || trimmed.ends_with('/')
+        || trimmed.chars().any(|c| {
+            matches!(
+                c,
+                '~' | '^' | ':' | '?' | '*' | '[' | '\\' | '\0'
+            )
+        })
+    {
+        return CreateResult::InvalidName(
+            "Name contains invalid characters.".into(),
+        );
+    }
+
+    let repo = match Repository::discover(path) {
+        Ok(r) => r,
+        Err(e) => return CreateResult::Error(format!("Not a repo: {e}")),
+    };
+
+    // Check for existing branch.
+    if repo.find_branch(trimmed, BranchType::Local).is_ok() {
+        return CreateResult::AlreadyExists;
+    }
+
+    let head_commit = match repo.head().and_then(|h| h.peel_to_commit()) {
+        Ok(c) => c,
+        Err(e) => return CreateResult::Error(format!("Could not resolve HEAD: {e}")),
+    };
+
+    let result = match repo.branch(trimmed, &head_commit, false) {
+        Ok(_) => CreateResult::Ok(trimmed.to_string()),
+        Err(e) => CreateResult::Error(format!("Branch creation failed: {e}")),
+    };
+    result
+}
+
 /// Result of a branch switch attempt.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SwitchResult {
