@@ -37,6 +37,8 @@ pub enum Action {
     Search,
     /// Open the selected item in the user's editor (o).
     Open,
+    /// Open the Rebase Portal preview (p).
+    Portal,
     /// Backspace (used in text-input mode).
     Backspace,
     /// A key that doesn't map to a specific command — used for
@@ -63,6 +65,7 @@ pub fn map_key(code: KeyCode) -> Action {
         KeyCode::Char('d') => Action::Preview,
         KeyCode::Char('/') => Action::Search,
         KeyCode::Char('o') => Action::Open,
+        KeyCode::Char('p') => Action::Portal,
         _ => Action::Other,
     }
 }

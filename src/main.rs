@@ -108,8 +108,16 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
     loop {
         terminal.draw(|frame| ui::draw(frame, &app, &repo_status))?;
 
-        // Use a shorter poll timeout during intro for smooth animation.
-        let poll_ms = if app.screen == Screen::Intro { 120 } else { 250 };
+        // Use a shorter poll timeout during animated screens for smoothness.
+        let poll_ms = if app.screen == Screen::Intro {
+            120
+        } else if app.screen == Screen::RebaseExecute
+            && matches!(app.rebase_execute.mode, app::RebaseExecuteMode::Animating)
+        {
+            180
+        } else {
+            250
+        };
 
         if event::poll(Duration::from_millis(poll_ms))? {
             if let Event::Key(key) = event::read()? {
@@ -146,6 +154,11 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                 Settings::mark_intro_seen();
                 app.screen = Screen::Title;
             }
+        } else if app.screen == Screen::RebaseExecute
+            && matches!(app.rebase_execute.mode, app::RebaseExecuteMode::Animating)
+        {
+            // Advance the rebase playback animation one step per tick.
+            let _ = app.rebase_execute.tick();
         }
     }
 
@@ -308,6 +321,59 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
         Effect::OpenEditor(_) => {
             // Handled inline in the event loop so we have terminal access
             // to suspend/restore the TUI. This arm should be unreachable.
+        }
+        Effect::LoadRebasePreview(target) => {
+            app.rebase_portal.preview =
+                Some(git::rebase_preview::preview_rebase(".", &target));
+            app.rebase_portal.scroll = 0;
+            app.rebase_portal.mode = app::RebasePortalMode::Preview;
+        }
+        Effect::ExecuteRebase(target) => {
+            // Preflight check first — never run rebase if safety fails.
+            let preflight_result = git::rebase_execute::preflight(".", &target);
+            let result = match preflight_result {
+                Some(blocked) => blocked,
+                None => git::rebase_execute::execute_rebase(".", &target),
+            };
+
+            // Seed the execute screen state from the preview we already have.
+            // If preview is absent (shouldn't happen via normal UI flow),
+            // fall back to an empty stub that still shows the outcome.
+            let preview_snapshot = app
+                .rebase_portal
+                .preview
+                .clone()
+                .unwrap_or_else(|| git::rebase_preview::RebasePreview {
+                    source: String::new(),
+                    target: target.clone(),
+                    source_tip: String::new(),
+                    target_tip: String::new(),
+                    merge_base: None,
+                    commits: vec![],
+                    truncated: false,
+                    has_merge_commits: false,
+                    dirty_tree: false,
+                    kind: git::rebase_preview::PreviewKind::Ready,
+                });
+            app.rebase_execute =
+                app::RebaseExecuteState::from_outcome(&preview_snapshot, &result);
+            app.screen = app::Screen::RebaseExecute;
+        }
+        Effect::AbortRebase => {
+            match git::rebase_execute::abort_rebase(".") {
+                Ok(()) => {
+                    app.rebase_execute.mode = app::RebaseExecuteMode::Aborted {
+                        message: "Rebase aborted. Your branch is back where it was.".into(),
+                        ok: true,
+                    };
+                }
+                Err(e) => {
+                    app.rebase_execute.mode = app::RebaseExecuteMode::Aborted {
+                        message: format!("Abort failed: {e}"),
+                        ok: false,
+                    };
+                }
+            }
         }
     }
 }

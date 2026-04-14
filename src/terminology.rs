@@ -193,6 +193,51 @@ impl Terms {
         "Sync" // same in all modes
     }
 
+    /// Entry-point label for the rebase portal (used on the Branches screen).
+    pub fn rebase_action(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => "Rebase Portal",
+            TermMode::Hybrid => "Rebase Portal (Rebase)",
+            TermMode::Git => "Rebase",
+        }
+    }
+
+    /// Title of the portal preview screen.
+    pub fn title_rebase_portal(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => " Rebase Portal ",
+            TermMode::Hybrid => " Rebase Portal (Rebase) ",
+            TermMode::Git => " Rebase Preview ",
+        }
+    }
+
+    /// Title of the rebase execution / animation screen.
+    pub fn title_rebase_execute(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => " Rebase Portal \u{2014} Running ",
+            TermMode::Hybrid => " Rebase Portal (Rebase) \u{2014} Running ",
+            TermMode::Git => " Rebase \u{2014} Running ",
+        }
+    }
+
+    /// Honest description of what rebase does, used in preview + confirm.
+    pub fn rebase_description(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => {
+                "A portal replays your checkpoints on top of a new base. \
+                 Your history gets rewritten \u{2014} avoid on shared paths."
+            }
+            TermMode::Hybrid => {
+                "Rebase replays your commits on top of a new base. \
+                 It rewrites history \u{2014} avoid on shared branches."
+            }
+            TermMode::Git => {
+                "Rebase replays commits in <current>..<target> on top of <target>. \
+                 History is rewritten \u{2014} do not use on shared refs."
+            }
+        }
+    }
+
     // ── Menu labels (per screen) ─────────────────────────────────
 
     pub fn menu_status(&self) -> &'static str {
