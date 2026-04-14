@@ -122,7 +122,7 @@ fn is_binary(path: &Path) -> bool {
         Ok(n) => n,
         Err(_) => return false,
     };
-    buf[..n].iter().any(|&b| b == 0)
+    buf[..n].contains(&0)
 }
 
 /// Human-readable message for an [`EditorResult`] — used to populate

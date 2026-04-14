@@ -231,7 +231,7 @@ fn render_character_panel(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(plate, chunks[1]);
 
     // Character portrait (cactus)
-    let art = Paragraph::new(Text::from(cactus::CACTUS_SMALL))
+    let art = Paragraph::new(Text::from(cactus::small()))
         .style(Style::default().fg(color))
         .alignment(Alignment::Center);
     frame.render_widget(art, chunks[2]);

@@ -176,7 +176,7 @@ fn render_side_panel(frame: &mut Frame, area: Rect, repo: &RepoStatus) {
     .split(area);
 
     // Cactus art
-    let art = Paragraph::new(Text::from(cactus::CACTUS_SMALL))
+    let art = Paragraph::new(Text::from(cactus::small()))
         .style(Style::default().fg(Color::White))
         .alignment(Alignment::Center);
     frame.render_widget(art, chunks[1]);
