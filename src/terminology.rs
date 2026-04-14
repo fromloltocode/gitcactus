@@ -189,6 +189,42 @@ impl Terms {
         }
     }
 
+    /// Label for the rebase-portal action / feature name.
+    pub fn rebase_action(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => "Rebase Portal",
+            TermMode::Hybrid => "Rebase Portal (Rebase)",
+            TermMode::Git => "Rebase",
+        }
+    }
+
+    /// Title for the rebase portal screen.
+    pub fn title_rebase_portal(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => " Rebase Portal ",
+            TermMode::Hybrid => " Rebase Portal (Rebase) ",
+            TermMode::Git => " Rebase Preview ",
+        }
+    }
+
+    /// Short, honest description of what rebase does.
+    pub fn rebase_description(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => {
+                "A portal replays your checkpoints on top of a new base. \
+                 Your history gets rewritten — avoid on shared paths."
+            }
+            TermMode::Hybrid => {
+                "Rebase replays your commits on top of a new base. \
+                 It rewrites history — avoid on shared branches."
+            }
+            TermMode::Git => {
+                "Rebase replays commits in <current>..<target> on top of <target>. \
+                 History is rewritten — do not use on shared refs."
+            }
+        }
+    }
+
     pub fn sync(&self) -> &'static str {
         "Sync" // same in all modes
     }

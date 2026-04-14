@@ -1,37 +1,145 @@
 //! ASCII art and personality for the GitCactus mascot.
+//!
+//! The cactus art is "pixelated" using Unicode full-block characters (`█`)
+//! with scattered middle-dot (`·`) spines.  Multiple frames cycle through
+//! the spine positions to create a gentle "shimmer" animation driven by
+//! wall-clock time — no loop changes required.
 
-/// The main cactus art used on the title screen.
-pub const CACTUS_LARGE: &str = "\
-      _  _
-     | || |
-    _| || |_
-   |   __   |
-   |  |  |  |
-   |  |  |  |
-  _|  |  |  |_
- |    |  |    |
- |    |  |    |
-  \\   |  |  /
-   \\__|  |_/
-      |  |
-      |  |
-    __|  |__
-   /        \\
-  /____  ____\\
-       ||
-       ||";
+use std::sync::OnceLock;
+use std::time::Instant;
 
-/// Compact cactus for the menu sidebar.
-pub const CACTUS_SMALL: &str = "\
-    _|_
-   | . |
-  _| . |_
- |  \\_/  |
-  \\  |  /
-   \\_|_/
-    | |
-   _|_|_
-  /_____\\";
+/// Application start time, used to derive the current animation frame.
+///
+/// Initialised on first access and never mutated afterwards.
+static START: OnceLock<Instant> = OnceLock::new();
+
+/// Period between animation frames, in milliseconds.
+///
+/// Kept modest (≈600 ms) so the shimmer feels subtle rather than busy,
+/// and remains readable at the main loop's ~4 FPS poll rate.
+const FRAME_PERIOD_MS: u128 = 600;
+
+// ── Large cactus (title screen) ──────────────────────────────────────
+//
+// 16 lines tall.  The body/arms are identical across frames; only the
+// spine positions (·) change, producing a gentle "light spinning" effect.
+
+const CACTUS_LARGE_FRAMES: &[&str] = &[
+    // Frame 0 — spines clustered upper-right
+    "\
+        ████████
+       ██████████
+       ██  ··  ██
+       ██████████
+  ████ ██  ·   ██ ████
+  ████ ██████████ ████
+  ████ ██      ██ ████
+  ██████████████████████
+  ██████████████████████
+       ██  ·   ██
+       ██████████
+       ██   ·  ██
+       ██████████
+       ██ ·    ██
+       ██████████
+      ████████████",
+    // Frame 1 — spines shifted centre/left
+    "\
+        ████████
+       ██████████
+       ██ ·    ██
+       ██████████
+  ████ ██      ██ ████
+  ████ ██████████ ████
+  ████ ██  ··  ██ ████
+  ██████████████████████
+  ██████████████████████
+       ██ ·  · ██
+       ██████████
+       ██      ██
+       ██████████
+       ██   ·  ██
+       ██████████
+      ████████████",
+    // Frame 2 — spines rotated to lower body
+    "\
+        ████████
+       ██████████
+       ██   ·  ██
+       ██████████
+  ████ ██ ·    ██ ████
+  ████ ██████████ ████
+  ████ ██   ·  ██ ████
+  ██████████████████████
+  ██████████████████████
+       ██      ██
+       ██████████
+       ██ ·  · ██
+       ██████████
+       ██  ·   ██
+       ██████████
+      ████████████",
+];
+
+// ── Small cactus (sidebars) ──────────────────────────────────────────
+//
+// 9 lines tall — matches the previous art's height so sidebar layouts
+// stay intact.
+
+const CACTUS_SMALL_FRAMES: &[&str] = &[
+    // Frame 0
+    "\
+    ████
+    ████
+ ██ ████ ██
+ ██ ██·█ ██
+ ██████████
+    ██·█
+    ████
+    ████
+   ██████",
+    // Frame 1
+    "\
+    ████
+    ████
+ ██ ████ ██
+ ██ █·██ ██
+ ██████████
+    ████
+    ██·█
+    ████
+   ██████",
+    // Frame 2
+    "\
+    ████
+    ████
+ ██ ████ ██
+ ██ ████ ██
+ ██████████
+    ████
+    ████
+    ██·█
+   ██████",
+];
+
+/// Return the current animation frame index for an `n`-frame cycle.
+fn frame_idx(num_frames: usize) -> usize {
+    if num_frames == 0 {
+        return 0;
+    }
+    let start = START.get_or_init(Instant::now);
+    ((start.elapsed().as_millis() / FRAME_PERIOD_MS) as usize) % num_frames
+}
+
+/// The large title-screen cactus — current animation frame.
+pub fn large() -> &'static str {
+    CACTUS_LARGE_FRAMES[frame_idx(CACTUS_LARGE_FRAMES.len())]
+}
+
+/// The small sidebar cactus — current animation frame.
+pub fn small() -> &'static str {
+    CACTUS_SMALL_FRAMES[frame_idx(CACTUS_SMALL_FRAMES.len())]
+}
 
 /// A short greeting from the cactus for the title screen.
 pub const TITLE_TAGLINE: &str = "Your prickly-but-friendly Git companion.";
@@ -80,7 +188,11 @@ pub fn stage_tip(selected: usize, total: usize) -> &'static str {
 ///
 /// The three counts are (staged, modified, untracked). Pass `None` for any
 /// value that could not be determined (non-repo case).
-pub fn status_tip(staged: Option<usize>, modified: Option<usize>, untracked: Option<usize>) -> &'static str {
+pub fn status_tip(
+    staged: Option<usize>,
+    modified: Option<usize>,
+    untracked: Option<usize>,
+) -> &'static str {
     let s = staged.unwrap_or(0);
     let m = modified.unwrap_or(0);
     let u = untracked.unwrap_or(0);

@@ -227,7 +227,7 @@ fn render_side_panel(frame: &mut Frame, area: Rect, app: &App) {
     ])
     .split(area);
 
-    let art = Paragraph::new(Text::from(cactus::CACTUS_SMALL))
+    let art = Paragraph::new(Text::from(cactus::small()))
         .style(Style::default().fg(Color::White))
         .alignment(Alignment::Center);
     frame.render_widget(art, chunks[1]);
@@ -302,12 +302,14 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
 
     let selected_is_current = app.branches_state.selected_is_current();
     let new_action_label = app.terms.new_branch_action();
+    let portal_label = app.terms.rebase_action();
 
     let mut bindings: Vec<(&str, &str)> = vec![
         ("\u{2191}/\u{2193}/w/s", "move"),
     ];
     if !selected_is_current && !app.branches_state.branches.branches.is_empty() {
         bindings.push(("Enter", "switch"));
+        bindings.push(("p", portal_label));
     }
     bindings.push(("n", new_action_label));
     bindings.push(("/", "search"));

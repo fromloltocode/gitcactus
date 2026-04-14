@@ -122,7 +122,7 @@ fn render_logo_phase(frame: &mut Frame, area: Rect, f: usize) {
 
     // "PRESS START" blink after logo is fully revealed
     if logo_frame >= logo_lines.len() {
-        let blink_on = (logo_frame / 2) % 2 == 0;
+        let blink_on = (logo_frame / 2).is_multiple_of(2);
         if blink_on {
             let press = Paragraph::new(Line::from(Span::styled(
                 "- PRESS ANY KEY -",

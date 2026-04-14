@@ -43,7 +43,7 @@ fn render_sidebar(frame: &mut Frame, area: Rect) {
     ])
     .split(inner);
 
-    let art = Paragraph::new(Text::from(cactus::CACTUS_SMALL))
+    let art = Paragraph::new(Text::from(cactus::small()))
         .style(Style::default().fg(Color::White))
         .alignment(Alignment::Center);
     frame.render_widget(art, chunks[1]);

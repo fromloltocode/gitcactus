@@ -49,7 +49,7 @@ pub fn render(frame: &mut Frame, area: Rect) {
     frame.render_widget(tagline, chunks[2]);
 
     // Cactus
-    let cactus_art = Paragraph::new(Text::from(cactus::CACTUS_LARGE))
+    let cactus_art = Paragraph::new(Text::from(cactus::large()))
         .style(Style::default().fg(Color::DarkGray))
         .alignment(Alignment::Center);
     frame.render_widget(cactus_art, chunks[3]);

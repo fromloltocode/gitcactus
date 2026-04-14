@@ -6,6 +6,7 @@ pub mod help;
 pub mod history;
 pub mod intro;
 pub mod menu;
+pub mod rebase_portal;
 pub mod settings_screen;
 pub mod stage;
 pub mod status;

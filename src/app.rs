@@ -52,6 +52,8 @@ pub enum Effect {
     /// Open the given file path in the user's $EDITOR.
     /// The event loop is responsible for suspending the TUI before this.
     OpenEditor(String),
+    /// Compute a read-only rebase preview for the given target branch.
+    LoadRebasePreview(String),
 }
 
 /// The screens the app can display.
@@ -71,6 +73,7 @@ pub enum Screen {
     DiffPreview,
     Settings,
     CommitDetails,
+    RebasePortal,
 }
 
 /// Main menu items, in display order.
@@ -588,6 +591,46 @@ impl CommitDetailsState {
     }
 }
 
+// ── Rebase Portal screen state ──────────────────────────────────────
+
+/// State for the read-only Rebase Portal preview screen.
+pub struct RebasePortalState {
+    /// Loaded preview data. `None` before first load.
+    pub preview: Option<crate::git::rebase_preview::RebasePreview>,
+    /// Scroll offset into the replayed-commit list.
+    pub scroll: usize,
+    /// Remember which screen opened us so Esc returns correctly.
+    pub return_to: Screen,
+}
+
+impl Default for RebasePortalState {
+    fn default() -> Self { Self::new() }
+}
+
+impl RebasePortalState {
+    pub fn new() -> Self {
+        Self {
+            preview: None,
+            scroll: 0,
+            return_to: Screen::Branches,
+        }
+    }
+
+    pub fn scroll_up(&mut self) {
+        self.scroll = self.scroll.saturating_sub(2);
+    }
+
+    pub fn scroll_down(&mut self) {
+        let max = self
+            .preview
+            .as_ref()
+            .map(|p| p.commits.len())
+            .unwrap_or(0)
+            .saturating_sub(1);
+        self.scroll = (self.scroll + 2).min(max);
+    }
+}
+
 // ── Branches screen state ───────────────────────────────────────────
 
 /// Sub-mode for the branches screen.
@@ -818,6 +861,8 @@ pub struct App {
     /// Transient message from the last editor-open attempt.
     /// Rendered as a status banner until the next key press clears it.
     pub editor_msg: Option<(String, bool)>,
+    /// State for the Rebase Portal preview screen.
+    pub rebase_portal: RebasePortalState,
 }
 
 impl Default for App {
@@ -848,6 +893,7 @@ impl App {
             branches_state: BranchesState::new(),
             commit_details: CommitDetailsState::new(),
             editor_msg: None,
+            rebase_portal: RebasePortalState::new(),
         }
     }
 
@@ -1151,6 +1197,22 @@ impl App {
                             self.branches_state.mode = BranchesMode::Creating;
                             Effect::None
                         }
+                        Action::Portal => {
+                            // 'p' opens the Rebase Portal preview for the
+                            // highlighted (non-current) branch.
+                            if self.branches_state.selected_is_current() {
+                                Effect::None
+                            } else if let Some(target) =
+                                self.branches_state.selected_name()
+                            {
+                                self.rebase_portal.return_to = Screen::Branches;
+                                self.rebase_portal.scroll = 0;
+                                self.screen = Screen::RebasePortal;
+                                Effect::LoadRebasePreview(target)
+                            } else {
+                                Effect::None
+                            }
+                        }
                         Action::Select => {
                             if self.branches_state.selected_is_current() {
                                 self.branches_state.result_msg = Some((
@@ -1323,6 +1385,26 @@ impl App {
                         Effect::None
                     }
                 }
+                _ => Effect::None,
+            },
+
+            // ── Rebase Portal (read-only preview) ─────────────────
+            Screen::RebasePortal => match action {
+                Action::Quit => Effect::Quit,
+                Action::Back => {
+                    self.screen = self.rebase_portal.return_to;
+                    Effect::None
+                }
+                Action::MoveUp => {
+                    self.rebase_portal.scroll_up();
+                    Effect::None
+                }
+                Action::MoveDown => {
+                    self.rebase_portal.scroll_down();
+                    Effect::None
+                }
+                // Phase 1 is preview-only — Enter is a deliberate no-op.
+                Action::Select => Effect::None,
                 _ => Effect::None,
             },
 

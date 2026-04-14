@@ -309,5 +309,10 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
             // Handled inline in the event loop so we have terminal access
             // to suspend/restore the TUI. This arm should be unreachable.
         }
+        Effect::LoadRebasePreview(target) => {
+            app.rebase_portal.preview =
+                Some(git::rebase_preview::preview_rebase(".", &target));
+            app.rebase_portal.scroll = 0;
+        }
     }
 }
