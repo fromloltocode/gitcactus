@@ -9,7 +9,8 @@ use gitcactus::app::{
 };
 use gitcactus::git::branches::{BranchEntry, BranchListResult};
 use gitcactus::git::rebase_execute::{
-    self, abort_rebase, execute_rebase, preflight, ExecuteResult,
+    self, abort_rebase, continue_rebase, execute_rebase, preflight,
+    ContinueResult, ExecuteResult,
 };
 use gitcactus::git::rebase_preview::{
     preview_rebase, PreviewCommit, PreviewKind, RebasePreview,
@@ -477,6 +478,182 @@ fn abort_on_nonexistent_path_returns_error() {
     assert!(r.is_err());
 }
 
+// ── Continue Rebase: safety gate + input mapping ─────────────────────
+
+#[test]
+fn c_maps_to_continue_action() {
+    use crossterm::event::KeyCode;
+    assert_eq!(map_key(KeyCode::Char('c')), Action::Continue);
+}
+
+#[test]
+fn continue_refuses_when_not_in_rebase() {
+    // No rebase in progress under a nonexistent path → must refuse,
+    // never try to "recover" into some other state.
+    let r = continue_rebase("/tmp/gitcactus-not-a-repo-xyz-9999");
+    assert_eq!(r, ContinueResult::NotInRebase);
+}
+
+#[test]
+fn conflict_screen_c_fires_continue_rebase_effect() {
+    let mut app = App::new();
+    app.screen = Screen::RebaseExecute;
+    app.rebase_execute.mode = RebaseExecuteMode::Conflict {
+        stderr: "CONFLICT (content): merge conflict in a.txt".into(),
+    };
+
+    let e = app.handle_action(Action::Continue);
+    assert_eq!(e, Effect::ContinueRebase);
+}
+
+#[test]
+fn conflict_screen_a_still_fires_abort_rebase_effect() {
+    let mut app = App::new();
+    app.screen = Screen::RebaseExecute;
+    app.rebase_execute.mode = RebaseExecuteMode::Conflict {
+        stderr: String::new(),
+    };
+
+    // 'a' maps to ToggleAll in command-mode key mapping.
+    let e = app.handle_action(Action::ToggleAll);
+    assert_eq!(e, Effect::AbortRebase);
+}
+
+#[test]
+fn conflict_screen_esc_leaves_without_aborting_or_continuing() {
+    let mut app = App::new();
+    app.screen = Screen::RebaseExecute;
+    app.rebase_execute.mode = RebaseExecuteMode::Conflict {
+        stderr: String::new(),
+    };
+
+    let e = app.handle_action(Action::Back);
+    // Esc returns to branches. It never fires Abort or Continue.
+    assert!(matches!(e, Effect::LoadBranches));
+    assert!(!matches!(e, Effect::AbortRebase | Effect::ContinueRebase));
+}
+
+// ── State-machine sanity: every mode reacts correctly ────────────────
+
+#[test]
+fn conflict_mode_only_fires_abort_or_continue_on_right_keys() {
+    for action in all_actions() {
+        let mut app = App::new();
+        app.screen = Screen::RebaseExecute;
+        app.rebase_execute.mode = RebaseExecuteMode::Conflict {
+            stderr: String::new(),
+        };
+
+        let e = app.handle_action(action);
+        match (action, &e) {
+            (Action::Continue, Effect::ContinueRebase) => {}
+            (Action::ToggleAll, Effect::AbortRebase) => {}
+            (_, Effect::ContinueRebase) => {
+                panic!("ContinueRebase leaked for non-Continue action {action:?}");
+            }
+            (_, Effect::AbortRebase) => {
+                panic!("AbortRebase leaked for non-ToggleAll action {action:?}");
+            }
+            _ => {}
+        }
+    }
+}
+
+#[test]
+fn success_and_aborted_modes_never_fire_continue() {
+    // Only the Conflict state is allowed to issue Continue. Once the
+    // rebase is done (Success) or rolled back (Aborted) a stray 'c'
+    // press must be a no-op.
+    let non_conflict_modes = [
+        RebaseExecuteMode::Success,
+        RebaseExecuteMode::Aborted {
+            message: String::new(),
+            ok: true,
+        },
+        RebaseExecuteMode::Aborted {
+            message: String::new(),
+            ok: false,
+        },
+        RebaseExecuteMode::Failure {
+            message: String::new(),
+        },
+    ];
+    for mode in non_conflict_modes {
+        let mut app = App::new();
+        app.screen = Screen::RebaseExecute;
+        app.rebase_execute.mode = mode.clone();
+        let e = app.handle_action(Action::Continue);
+        assert_ne!(
+            e,
+            Effect::ContinueRebase,
+            "ContinueRebase leaked from mode {mode:?}"
+        );
+    }
+}
+
+#[test]
+fn animating_mode_any_input_just_skips_never_mutates() {
+    for action in all_actions() {
+        let mut app = App::new();
+        app.screen = Screen::RebaseExecute;
+        let preview = ready_preview_with_n(3);
+        app.rebase_execute =
+            RebaseExecuteState::from_outcome(&preview, &ExecuteResult::Success);
+        assert!(matches!(app.rebase_execute.mode, RebaseExecuteMode::Animating));
+
+        let e = app.handle_action(action);
+        assert_eq!(e, Effect::None);
+        if is_mutating(&e) {
+            panic!("Animating mode leaked mutating effect {e:?} for action {action:?}");
+        }
+    }
+}
+
+// ── Preview states: exhaustive safety sweep (strengthened) ───────────
+
+#[test]
+fn no_preview_kind_lets_preview_mode_execute() {
+    let kinds = [
+        PreviewKind::NoCommitsToReplay,
+        PreviewKind::SameBranch,
+        PreviewKind::DetachedHead,
+        PreviewKind::BranchMissing,
+        PreviewKind::EmptyRepo,
+        PreviewKind::NotARepo,
+        PreviewKind::Error("boom".into()),
+    ];
+    for kind in kinds {
+        for action in all_actions() {
+            let mut app = App::new();
+            app.screen = Screen::RebasePortal;
+            let mut p = ready_preview();
+            p.kind = kind.clone();
+            p.commits.clear();
+            app.rebase_portal.preview = Some(p);
+            app.rebase_portal.mode = RebasePortalMode::Preview;
+
+            let e = app.handle_action(action);
+            assert!(
+                !matches!(e, Effect::ExecuteRebase(_)),
+                "ExecuteRebase leaked for preview kind {kind:?} with action {action:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn dirty_tree_blocks_execute_even_with_ready_kind() {
+    let mut app = App::new();
+    app.screen = Screen::RebasePortal;
+    let mut p = ready_preview();
+    p.dirty_tree = true;
+    app.rebase_portal.preview = Some(p);
+
+    let e = app.handle_action(Action::Select);
+    assert_eq!(e, Effect::None);
+    assert_eq!(app.rebase_portal.mode, RebasePortalMode::Preview);
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 fn ready_preview() -> RebasePreview {
@@ -522,6 +699,7 @@ fn all_actions() -> Vec<Action> {
         Action::Search,
         Action::Open,
         Action::Portal,
+        Action::Continue,
         Action::Char('x'),
         Action::Backspace,
         Action::Other,
@@ -537,5 +715,6 @@ fn is_mutating(e: &Effect) -> bool {
             | Effect::CreateBranch(_)
             | Effect::ExecuteRebase(_)
             | Effect::AbortRebase
+            | Effect::ContinueRebase
     )
 }

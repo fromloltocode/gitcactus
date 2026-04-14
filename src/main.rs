@@ -375,5 +375,63 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
                 }
             }
         }
+        Effect::ContinueRebase => {
+            use git::rebase_execute::ContinueResult;
+            match git::rebase_execute::continue_rebase(".") {
+                ContinueResult::Finished => {
+                    // The rebase is fully done. Advance the animation
+                    // playback to its last frame and show Success.
+                    app.rebase_execute.fell = false;
+                    let last = app
+                        .rebase_execute
+                        .commits
+                        .len()
+                        .saturating_sub(1);
+                    app.rebase_execute.step = last;
+                    app.rebase_execute.mode = app::RebaseExecuteMode::Success;
+                }
+                ContinueResult::AnotherConflict { stderr } => {
+                    // Stay in a conflict state, but make it explicit that
+                    // a *new* conflict followed the continue attempt.
+                    app.rebase_execute.fell = true;
+                    let annotated = if stderr.is_empty() {
+                        "Another conflict after continue. Resolve and press 'c' again.".to_string()
+                    } else {
+                        format!(
+                            "Another conflict after continue:\n{stderr}"
+                        )
+                    };
+                    app.rebase_execute.mode =
+                        app::RebaseExecuteMode::Conflict { stderr: annotated };
+                }
+                ContinueResult::Blocked { stderr } => {
+                    // Git refused to continue. Keep the user in the
+                    // conflict state so they can either resolve+stage and
+                    // retry, or abort.
+                    app.rebase_execute.fell = true;
+                    let annotated = if stderr.is_empty() {
+                        "Continue blocked. Resolve conflicts and `git add` them before retrying.".to_string()
+                    } else {
+                        format!(
+                            "Continue blocked:\n{stderr}\n\nResolve conflicts and `git add` the files, then press 'c' again."
+                        )
+                    };
+                    app.rebase_execute.mode =
+                        app::RebaseExecuteMode::Conflict { stderr: annotated };
+                }
+                ContinueResult::NotInRebase => {
+                    // Defensive — the screen thought we were in a rebase
+                    // but the on-disk state says otherwise.
+                    app.rebase_execute.mode = app::RebaseExecuteMode::Failure {
+                        message: "No rebase is currently in progress.".into(),
+                    };
+                }
+                ContinueResult::Error { message } => {
+                    app.rebase_execute.mode = app::RebaseExecuteMode::Failure {
+                        message: format!("Continue failed: {message}"),
+                    };
+                }
+            }
+        }
     }
 }

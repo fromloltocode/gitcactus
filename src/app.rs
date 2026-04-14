@@ -59,6 +59,10 @@ pub enum Effect {
     ExecuteRebase(String),
     /// Run `git rebase --abort` from the conflict state.
     AbortRebase,
+    /// Run `git rebase --continue` from the conflict state.
+    /// Guarded at the git layer: refuses to run unless a rebase is
+    /// actually in progress on disk.
+    ContinueRebase,
 }
 
 /// The screens the app can display.
@@ -1577,18 +1581,14 @@ impl App {
 
             // ── Rebase Execute (animation + result) ───────────────
             Screen::RebaseExecute => match self.rebase_execute.mode.clone() {
-                RebaseExecuteMode::Animating => match action {
-                    // Any key skips the animation to its end.
-                    Action::Quit | Action::Back | Action::Select | Action::Other
-                    | Action::MoveUp | Action::MoveDown | Action::Confirm
-                    | Action::Deny | Action::Toggle | Action::ToggleAll
-                    | Action::Refresh | Action::Preview | Action::Search
-                    | Action::Open | Action::Portal | Action::Char(_)
-                    | Action::Backspace => {
-                        self.rebase_execute.skip_animation();
-                        Effect::None
-                    }
-                },
+                RebaseExecuteMode::Animating => {
+                    // Any key skips the animation. Using a wildcard here is
+                    // deliberate — we never mutate the repo from this mode,
+                    // so "any input means skip" is the only behaviour.
+                    let _ = action;
+                    self.rebase_execute.skip_animation();
+                    Effect::None
+                }
                 RebaseExecuteMode::Success => match action {
                     Action::Quit => Effect::Quit,
                     Action::Back | Action::Select => {
@@ -1599,14 +1599,18 @@ impl App {
                 },
                 RebaseExecuteMode::Conflict { .. } => match action {
                     // Esc in conflict returns to branches *without* aborting —
-                    // the user may want to resolve manually. Aborting is
-                    // a deliberate explicit 'a' press.
+                    // the user may want to resolve manually. Aborting and
+                    // continuing are both deliberate explicit key presses.
                     Action::Back => {
                         self.screen = Screen::Branches;
                         Effect::LoadBranches
                     }
                     Action::Quit => Effect::Quit,
+                    // 'a' (ToggleAll) → abort rebase.
                     Action::ToggleAll => Effect::AbortRebase,
+                    // 'c' → continue a paused rebase. Safety-guarded at the
+                    // git layer (refuses if no rebase is in progress on disk).
+                    Action::Continue => Effect::ContinueRebase,
                     _ => Effect::None,
                 },
                 RebaseExecuteMode::Failure { .. } => match action {

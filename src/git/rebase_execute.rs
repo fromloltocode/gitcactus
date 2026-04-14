@@ -20,9 +20,11 @@
 //! 4. We can't accidentally corrupt index state with a partial
 //!    implementation; `git` handles atomicity.
 //!
-//! This module performs **only three operations**: preflight status
-//! check (read-only), `git rebase <target>` (mutation), and
-//! `git rebase --abort` (mutation). Nothing else.
+//! This module performs **only these operations**: preflight status
+//! check (read-only), `git rebase <target>` (mutation),
+//! `git rebase --abort` (mutation), and `git rebase --continue`
+//! (mutation, guarded by an explicit in-progress check). Nothing else.
+//! No `--skip`, no force, no autosquash, no interactive rebase.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -145,7 +147,12 @@ pub fn execute_rebase(repo_path: &str, target: &str) -> ExecuteResult {
 /// Run `git rebase --abort`. **Mutates the repository.**
 ///
 /// Intended for use from the conflict state of the execute screen.
+/// Guarded: refuses to run if no rebase is actually in progress, so
+/// an errant 'a' press on a stale screen can't do anything weird.
 pub fn abort_rebase(repo_path: &str) -> Result<(), String> {
+    if !is_rebase_in_progress(repo_path) {
+        return Err("No rebase is in progress.".into());
+    }
     let output = Command::new("git")
         .arg("-C")
         .arg(repo_path)
@@ -161,8 +168,106 @@ pub fn abort_rebase(repo_path: &str) -> Result<(), String> {
     }
 }
 
+/// Outcome of `git rebase --continue`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContinueResult {
+    /// Rebase fully finished — no rebase-in-progress on disk after.
+    Finished,
+    /// Git accepted the continue and applied a commit, but hit *another*
+    /// conflict on a later commit. The repo is still in rebase state.
+    AnotherConflict { stderr: String },
+    /// Git refused to continue (unmerged paths, nothing to commit, etc.).
+    /// The repo is still in rebase state and the user must act.
+    Blocked { stderr: String },
+    /// Some other non-zero exit that isn't covered by the cases above.
+    Error { message: String },
+    /// We refused to run because no rebase is actually in progress.
+    NotInRebase,
+}
+
+/// Run `git rebase --continue`. **Mutates the repository.**
+///
+/// Safety rules implemented here:
+///
+/// * We **refuse to run** unless [`is_rebase_in_progress`] reports true.
+///   This is the gate the task asks for — we never call continue out of
+///   context.
+/// * We never add `--force` or any similar flag.
+/// * We never `git add` on behalf of the user. They must stage their
+///   conflict resolutions themselves (or use the Stage screen).
+/// * We do not pass `-c core.editor` or anything to skip the commit
+///   editor — `git rebase --continue` may open the user's editor for a
+///   message; the TUI suspension path is the caller's responsibility.
+///   For this pass we pass `GIT_EDITOR=true` so continue never blocks
+///   on an editor prompt. Messages from prior commits are kept as-is.
+/// * Stderr is captured verbatim and handed back for display.
+pub fn continue_rebase(repo_path: &str) -> ContinueResult {
+    if !is_rebase_in_progress(repo_path) {
+        return ContinueResult::NotInRebase;
+    }
+
+    let output = match Command::new("git")
+        .arg("-C")
+        .arg(repo_path)
+        .arg("rebase")
+        .arg("--continue")
+        // Never pop an editor from under the TUI. If a commit needs a
+        // message, keep the existing one (git -c behavior w/ GIT_EDITOR=true).
+        .env("GIT_EDITOR", "true")
+        .output()
+    {
+        Ok(o) => o,
+        Err(e) => {
+            return ContinueResult::Error {
+                message: format!("Failed to invoke git: {e}"),
+            };
+        }
+    };
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let still_in_rebase = is_rebase_in_progress(repo_path);
+
+    match (output.status.success(), still_in_rebase) {
+        // Exit 0 and no more rebase dirs → rebase is fully done.
+        (true, false) => ContinueResult::Finished,
+        // Exit 0 but rebase is still in progress shouldn't normally happen,
+        // but treat it as a soft re-conflict rather than silently declaring
+        // success.
+        (true, true) => ContinueResult::AnotherConflict { stderr },
+        // Non-zero + still in rebase → either another conflict or a hard
+        // block (e.g. "Unmerged paths"). Use stderr to decide.
+        (false, true) => {
+            if looks_like_unmerged_block(&stderr) {
+                ContinueResult::Blocked { stderr }
+            } else {
+                ContinueResult::AnotherConflict { stderr }
+            }
+        }
+        // Non-zero and no rebase state on disk → something went wrong
+        // and the rebase was unwound.
+        (false, false) => ContinueResult::Error {
+            message: if stderr.is_empty() {
+                "git rebase --continue failed and the rebase is no longer in progress".into()
+            } else {
+                stderr
+            },
+        },
+    }
+}
+
+fn looks_like_unmerged_block(stderr: &str) -> bool {
+    let lower = stderr.to_lowercase();
+    lower.contains("unmerged path")
+        || lower.contains("needs merge")
+        || lower.contains("resolve all merge conflicts")
+        || lower.contains("no changes - did you forget to use")
+        || lower.contains("nothing to commit")
+}
+
 /// Check whether a rebase is currently in progress on disk.
-fn is_rebase_in_progress(repo_path: &str) -> bool {
+///
+/// Public so screens can gate UI hints without duplicating the logic.
+pub fn is_rebase_in_progress(repo_path: &str) -> bool {
     // Look relative to the discovered git directory, not `repo_path`,
     // so this works in worktrees and subdirectories.
     let git_dir = match Repository::discover(repo_path) {

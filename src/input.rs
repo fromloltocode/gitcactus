@@ -39,6 +39,9 @@ pub enum Action {
     Open,
     /// Open the Rebase Portal preview (p).
     Portal,
+    /// Continue a paused operation such as an in-progress rebase (c).
+    /// Handlers are responsible for gating this with a safety check.
+    Continue,
     /// Backspace (used in text-input mode).
     Backspace,
     /// A key that doesn't map to a specific command — used for
@@ -66,6 +69,7 @@ pub fn map_key(code: KeyCode) -> Action {
         KeyCode::Char('/') => Action::Search,
         KeyCode::Char('o') => Action::Open,
         KeyCode::Char('p') => Action::Portal,
+        KeyCode::Char('c') => Action::Continue,
         _ => Action::Other,
     }
 }

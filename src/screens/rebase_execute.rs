@@ -206,41 +206,75 @@ fn render_commit_stream(frame: &mut Frame, area: Rect, app: &App) {
     match &s.mode {
         RebaseExecuteMode::Conflict { stderr } => {
             lines.push(Line::from(Span::styled(
-                "  Conflict",
+                "  Conflict \u{2014} rebase paused",
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             )));
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "  git rebase stopped. Resolve manually, or abort below.",
+                "  Nothing is lost. Your branch is half-rebased and paused.",
                 Style::default().fg(Color::White),
             )));
             lines.push(Line::from(""));
+
+            // What YOU do (outside GitCactus, in your editor/terminal).
             lines.push(Line::from(Span::styled(
-                "  Next steps:",
+                "  What to do next (outside GitCactus):",
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             )));
             for step in &[
-                "1. Resolve the conflict markers in your files.",
-                "2. git add <files>",
-                "3. git rebase --continue",
-                "   (or press 'a' here to abort cleanly)",
+                "1. Open the conflicted files in your editor.",
+                "2. Resolve the <<<<<<< / ======= / >>>>>>> markers.",
+                "3. git add <file>   (stage each resolved file)",
             ] {
                 lines.push(Line::from(Span::styled(
                     format!("   {step}"),
                     Style::default().fg(Color::DarkGray),
                 )));
             }
+            lines.push(Line::from(""));
+
+            // What GitCactus can do for you right now.
+            lines.push(Line::from(Span::styled(
+                "  Then, here in GitCactus:",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )));
+            lines.push(Line::from(vec![
+                Span::styled("     c", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled("  Continue rebase (runs `git rebase --continue`)", Style::default().fg(Color::DarkGray)),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("     a", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled("  Abort rebase (runs `git rebase --abort`)", Style::default().fg(Color::DarkGray)),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("   Esc", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled("  Leave this screen, keep the rebase paused", Style::default().fg(Color::DarkGray)),
+            ]));
+            lines.push(Line::from(""));
+
+            // Honest note about what we don't do.
+            lines.push(Line::from(Span::styled(
+                "  GitCactus will not auto-resolve conflicts or auto-stage",
+                Style::default().fg(Color::DarkGray),
+            )));
+            lines.push(Line::from(Span::styled(
+                "  files. Those steps are always yours.",
+                Style::default().fg(Color::DarkGray),
+            )));
+
             if !stderr.is_empty() {
                 lines.push(Line::from(""));
                 lines.push(Line::from(Span::styled(
                     "  git output:",
                     Style::default().fg(Color::DarkGray),
                 )));
-                for line in stderr.lines().take(8) {
+                for line in stderr.lines().take(10) {
                     lines.push(Line::from(Span::styled(
                         format!("  {line}"),
                         Style::default().fg(Color::DarkGray),
@@ -328,8 +362,9 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
             ("q", "quit"),
         ],
         RebaseExecuteMode::Conflict { .. } => vec![
+            ("c", "continue rebase"),
             ("a", "abort rebase"),
-            ("Esc", "back (keep conflict)"),
+            ("Esc", "back (keep paused)"),
             ("q", "quit"),
         ],
         RebaseExecuteMode::Failure { .. } => vec![

@@ -52,7 +52,7 @@ Expected:
 7. `git log --oneline -5` outside the app shows the feature commits
    now on top of main's new commit.
 
-## Case 2 — conflicting rebase
+## Case 2 — conflicting rebase, then abort
 
 Reset the test repo and create conflicting content:
 
@@ -70,14 +70,54 @@ Expected:
 
 1. Portal preview still shows the replay list.
 2. Confirmation + `y` starts the rebase.
-3. Animation transitions to the **conflict** state. Cactus is shown
-   fallen (red), status reads "Stopped at conflict".
-4. Next-steps instructions are listed: resolve markers, `git add`,
-   `git rebase --continue`, or `a` to abort.
-5. Pressing `a` runs `git rebase --abort` cleanly. Status flips to
+3. Screen flips to **Conflict — rebase paused** state. Status reads
+   "Stopped at conflict". Cactus is shown fallen (red).
+4. Next-steps panel lists two sections:
+   - "What to do next (outside GitCactus)": open files, resolve
+     markers, `git add <file>`.
+   - "Then, here in GitCactus": `c` continue, `a` abort, `Esc` leave
+     paused.
+5. A small honest note reads: "GitCactus will not auto-resolve
+   conflicts or auto-stage files."
+6. Press `a` → runs `git rebase --abort` cleanly. Status flips to
    "Aborted" in green.
-6. Outside the app: `git status` shows a normal branch, no rebase in
+7. Outside the app: `git status` shows a normal branch, no rebase in
    progress.
+
+## Case 2b — conflicting rebase, then resolve + continue (NEW)
+
+Same setup as Case 2. Choose `c` instead of `a` after resolving:
+
+```bash
+# gitcactus is showing the Conflict state.
+# In another terminal:
+cd /tmp/gitcactus-rebase-test
+$EDITOR shared.txt            # resolve the <<<<<<< / ======= / >>>>>>> markers
+git add shared.txt
+# Back in gitcactus: press c
+```
+
+Expected:
+
+1. `c` runs `git rebase --continue` (refuses if no rebase is in progress;
+   this is enforced at the git layer).
+2. If no further conflicts: status flips to green "Rebase complete".
+   Outside the app, `git log --oneline` shows the feature history on
+   top of main.
+3. If another conflict appears on a later commit: the Conflict state
+   returns with a fresh stderr message prefixed
+   "Another conflict after continue:". Repeat resolve → add → `c`.
+4. If you press `c` **without** staging a resolution first: the
+   Conflict state returns with a "Continue blocked:" message pulled
+   straight from git. Nothing has mutated. You can still press `a`.
+
+Expected honesty:
+
+- At no point does GitCactus run `git add` on your behalf.
+- At no point does GitCactus retry `--continue` silently.
+- `Esc` always returns to Branches without touching the paused rebase.
+- `c` pressed on a stale screen (no rebase in progress) produces a
+  clean failure message, not a hang.
 
 ## Case 3 — already up to date
 
