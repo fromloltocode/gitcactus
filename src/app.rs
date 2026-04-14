@@ -52,6 +52,17 @@ pub enum Effect {
     /// Open the given file path in the user's $EDITOR.
     /// The event loop is responsible for suspending the TUI before this.
     OpenEditor(String),
+    /// Compute a read-only rebase preview for the given target branch.
+    LoadRebasePreview(String),
+    /// Execute `git rebase <target>`. Mutates the repository.
+    /// The event loop performs preflight checks and runs the rebase synchronously.
+    ExecuteRebase(String),
+    /// Run `git rebase --abort` from the conflict state.
+    AbortRebase,
+    /// Run `git rebase --continue` from the conflict state.
+    /// Guarded at the git layer: refuses to run unless a rebase is
+    /// actually in progress on disk.
+    ContinueRebase,
 }
 
 /// The screens the app can display.
@@ -73,6 +84,10 @@ pub enum Screen {
     CommitDetails,
     /// Local progression / skill tree screen.
     SkillTree,
+    /// Preview / confirm step for a rebase.
+    RebasePortal,
+    /// Actually running rebase + animation + result.
+    RebaseExecute,
 }
 
 /// Main menu items, in display order.
@@ -591,6 +606,174 @@ impl CommitDetailsState {
     }
 }
 
+// ── Rebase Portal state (preview + confirm) ─────────────────────────
+
+/// Sub-mode for the rebase portal screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RebasePortalMode {
+    /// Showing the preview and (if executable) a prompt to continue.
+    Preview,
+    /// Final confirmation before execution.
+    Confirm,
+}
+
+/// State for the read-only rebase portal (preview + confirm).
+pub struct RebasePortalState {
+    pub preview: Option<crate::git::rebase_preview::RebasePreview>,
+    pub mode: RebasePortalMode,
+    pub scroll: usize,
+    /// Screen to return to on Esc when in preview mode.
+    pub return_to: Screen,
+}
+
+impl Default for RebasePortalState {
+    fn default() -> Self { Self::new() }
+}
+
+impl RebasePortalState {
+    pub fn new() -> Self {
+        Self {
+            preview: None,
+            mode: RebasePortalMode::Preview,
+            scroll: 0,
+            return_to: Screen::Branches,
+        }
+    }
+
+    pub fn scroll_up(&mut self) {
+        self.scroll = self.scroll.saturating_sub(2);
+    }
+
+    pub fn scroll_down(&mut self) {
+        let max = self
+            .preview
+            .as_ref()
+            .map(|p| p.commits.len())
+            .unwrap_or(0)
+            .saturating_sub(1);
+        self.scroll = (self.scroll + 2).min(max);
+    }
+
+    pub fn can_execute(&self) -> bool {
+        self.preview
+            .as_ref()
+            .map(|p| p.is_executable())
+            .unwrap_or(false)
+    }
+}
+
+// ── Rebase Execute state (running + animation + result) ─────────────
+
+/// Sub-mode for the rebase execute screen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RebaseExecuteMode {
+    /// Cactus is hopping through portals — a playback of what just happened.
+    Animating,
+    /// Animation complete and rebase succeeded.
+    Success,
+    /// Rebase stopped at a conflict. Abort is offered.
+    Conflict { stderr: String },
+    /// Some other non-conflict failure.
+    Failure { message: String },
+    /// Abort in progress / done — (message, was_success).
+    Aborted { message: String, ok: bool },
+}
+
+/// State for the rebase execution + animation screen.
+pub struct RebaseExecuteState {
+    pub source: String,
+    pub target: String,
+    /// Ordered list of commit summaries that were (or would have been) replayed.
+    pub commits: Vec<String>,
+    /// Current animation frame (0-based step).
+    pub step: usize,
+    /// Whether the cactus should be shown as fallen (conflict animation).
+    pub fell: bool,
+    pub mode: RebaseExecuteMode,
+}
+
+impl Default for RebaseExecuteState {
+    fn default() -> Self { Self::new() }
+}
+
+impl RebaseExecuteState {
+    pub fn new() -> Self {
+        Self {
+            source: String::new(),
+            target: String::new(),
+            commits: Vec::new(),
+            step: 0,
+            fell: false,
+            mode: RebaseExecuteMode::Success,
+        }
+    }
+
+    /// Seed state from a preview + execute outcome.
+    pub fn from_outcome(
+        preview: &crate::git::rebase_preview::RebasePreview,
+        result: &crate::git::rebase_execute::ExecuteResult,
+    ) -> Self {
+        let commits: Vec<String> = preview
+            .commits
+            .iter()
+            .map(|c| format!("{} {}", c.short_hash, c.summary))
+            .collect();
+        let n = commits.len();
+
+        use crate::git::rebase_execute::ExecuteResult as R;
+        let (mode, fell) = match result {
+            R::Success => (RebaseExecuteMode::Success, false),
+            R::Conflict { stderr } => (
+                RebaseExecuteMode::Conflict { stderr: stderr.clone() },
+                true,
+            ),
+            R::Failure { message } => (
+                RebaseExecuteMode::Failure { message: message.clone() },
+                true,
+            ),
+            R::Blocked { reason } => (
+                RebaseExecuteMode::Failure { message: reason.clone() },
+                false,
+            ),
+        };
+
+        Self {
+            source: preview.source.clone(),
+            target: preview.target.clone(),
+            commits,
+            step: 0,
+            fell,
+            // Play the success animation first; other modes show immediately.
+            mode: if matches!(mode, RebaseExecuteMode::Success) && n > 0 {
+                RebaseExecuteMode::Animating
+            } else {
+                mode
+            },
+        }
+    }
+
+    /// Advance one animation step. Returns true when animation is done.
+    pub fn tick(&mut self) -> bool {
+        if !matches!(self.mode, RebaseExecuteMode::Animating) {
+            return true;
+        }
+        if self.step + 1 >= self.commits.len() {
+            self.mode = RebaseExecuteMode::Success;
+            return true;
+        }
+        self.step += 1;
+        false
+    }
+
+    /// Skip the animation by jumping to the final frame.
+    pub fn skip_animation(&mut self) {
+        if matches!(self.mode, RebaseExecuteMode::Animating) {
+            self.step = self.commits.len().saturating_sub(1);
+            self.mode = RebaseExecuteMode::Success;
+        }
+    }
+}
+
 // ── Branches screen state ───────────────────────────────────────────
 
 /// Sub-mode for the branches screen.
@@ -825,6 +1008,10 @@ pub struct App {
     pub theme: crate::theme::Theme,
     /// Local progression profile (XP, level, stats, unlocks).
     pub profile: crate::profile::Profile,
+    /// State for the Rebase Portal preview + confirm screen.
+    pub rebase_portal: RebasePortalState,
+    /// State for the Rebase execute / animation screen.
+    pub rebase_execute: RebaseExecuteState,
 }
 
 impl Default for App {
@@ -857,6 +1044,8 @@ impl App {
             editor_msg: None,
             theme: crate::theme::Theme::default(),
             profile: crate::profile::Profile::default(),
+            rebase_portal: RebasePortalState::new(),
+            rebase_execute: RebaseExecuteState::new(),
         }
     }
 
@@ -1160,6 +1349,22 @@ impl App {
                             self.branches_state.mode = BranchesMode::Creating;
                             Effect::None
                         }
+                        Action::Portal => {
+                            // 'p' opens the rebase portal preview for the
+                            // highlighted (non-current) branch.
+                            if self.branches_state.selected_is_current() {
+                                Effect::None
+                            } else if let Some(target) =
+                                self.branches_state.selected_name()
+                            {
+                                self.rebase_portal = RebasePortalState::new();
+                                self.rebase_portal.return_to = Screen::Branches;
+                                self.screen = Screen::RebasePortal;
+                                Effect::LoadRebasePreview(target)
+                            } else {
+                                Effect::None
+                            }
+                        }
                         Action::Select => {
                             if self.branches_state.selected_is_current() {
                                 self.branches_state.result_msg = Some((
@@ -1333,6 +1538,105 @@ impl App {
                     }
                 }
                 _ => Effect::None,
+            },
+
+            // ── Rebase Portal (preview + confirm) ─────────────────
+            Screen::RebasePortal => match self.rebase_portal.mode {
+                RebasePortalMode::Preview => match action {
+                    Action::Quit => Effect::Quit,
+                    Action::Back => {
+                        self.screen = self.rebase_portal.return_to;
+                        Effect::None
+                    }
+                    Action::MoveUp => {
+                        self.rebase_portal.scroll_up();
+                        Effect::None
+                    }
+                    Action::MoveDown => {
+                        self.rebase_portal.scroll_down();
+                        Effect::None
+                    }
+                    Action::Select => {
+                        // Enter advances to confirmation — but only if the
+                        // preview reports the situation is actually executable.
+                        if self.rebase_portal.can_execute() {
+                            self.rebase_portal.mode = RebasePortalMode::Confirm;
+                        }
+                        Effect::None
+                    }
+                    _ => Effect::None,
+                },
+                RebasePortalMode::Confirm => match action {
+                    Action::Quit => Effect::Quit,
+                    Action::Back | Action::Deny => {
+                        self.rebase_portal.mode = RebasePortalMode::Preview;
+                        Effect::None
+                    }
+                    Action::Confirm | Action::Select => {
+                        // Kick off the actual rebase. The event loop will
+                        // run preflight and execute synchronously.
+                        if let Some(p) = self.rebase_portal.preview.as_ref() {
+                            let target = p.target.clone();
+                            self.screen = Screen::RebaseExecute;
+                            Effect::ExecuteRebase(target)
+                        } else {
+                            self.rebase_portal.mode = RebasePortalMode::Preview;
+                            Effect::None
+                        }
+                    }
+                    _ => Effect::None,
+                },
+            },
+
+            // ── Rebase Execute (animation + result) ───────────────
+            Screen::RebaseExecute => match self.rebase_execute.mode.clone() {
+                RebaseExecuteMode::Animating => {
+                    // Any key skips the animation. Using a wildcard here is
+                    // deliberate — we never mutate the repo from this mode,
+                    // so "any input means skip" is the only behaviour.
+                    let _ = action;
+                    self.rebase_execute.skip_animation();
+                    Effect::None
+                }
+                RebaseExecuteMode::Success => match action {
+                    Action::Quit => Effect::Quit,
+                    Action::Back | Action::Select => {
+                        self.screen = Screen::Branches;
+                        Effect::LoadBranches
+                    }
+                    _ => Effect::None,
+                },
+                RebaseExecuteMode::Conflict { .. } => match action {
+                    // Esc in conflict returns to branches *without* aborting —
+                    // the user may want to resolve manually. Aborting and
+                    // continuing are both deliberate explicit key presses.
+                    Action::Back => {
+                        self.screen = Screen::Branches;
+                        Effect::LoadBranches
+                    }
+                    Action::Quit => Effect::Quit,
+                    // 'a' (ToggleAll) → abort rebase.
+                    Action::ToggleAll => Effect::AbortRebase,
+                    // 'c' → continue a paused rebase. Safety-guarded at the
+                    // git layer (refuses if no rebase is in progress on disk).
+                    Action::Continue => Effect::ContinueRebase,
+                    _ => Effect::None,
+                },
+                RebaseExecuteMode::Failure { .. } => match action {
+                    Action::Quit => Effect::Quit,
+                    Action::Back | Action::Select => {
+                        self.screen = Screen::Branches;
+                        Effect::LoadBranches
+                    }
+                    _ => Effect::None,
+                },
+                RebaseExecuteMode::Aborted { .. } => match action {
+                    Action::Quit => Effect::Quit,
+                    _ => {
+                        self.screen = Screen::Branches;
+                        Effect::LoadBranches
+                    }
+                },
             },
 
             // ── Settings ──────────────────────────────────────────

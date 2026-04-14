@@ -119,8 +119,16 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
     loop {
         terminal.draw(|frame| ui::draw(frame, &app, &repo_status))?;
 
-        // Use a shorter poll timeout during intro for smooth animation.
-        let poll_ms = if app.screen == Screen::Intro { 120 } else { 250 };
+        // Use a shorter poll timeout during animated screens for smoothness.
+        let poll_ms = if app.screen == Screen::Intro {
+            120
+        } else if app.screen == Screen::RebaseExecute
+            && matches!(app.rebase_execute.mode, app::RebaseExecuteMode::Animating)
+        {
+            180
+        } else {
+            250
+        };
 
         if event::poll(Duration::from_millis(poll_ms))? {
             if let Event::Key(key) = event::read()? {
@@ -157,6 +165,11 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                 Settings::mark_intro_seen();
                 app.screen = Screen::Title;
             }
+        } else if app.screen == Screen::RebaseExecute
+            && matches!(app.rebase_execute.mode, app::RebaseExecuteMode::Animating)
+        {
+            // Advance the rebase playback animation one step per tick.
+            let _ = app.rebase_execute.tick();
         }
     }
 
@@ -380,6 +393,117 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
         Effect::OpenEditor(_) => {
             // Handled inline in the event loop so we have terminal access
             // to suspend/restore the TUI. This arm should be unreachable.
+        }
+        Effect::LoadRebasePreview(target) => {
+            app.rebase_portal.preview =
+                Some(git::rebase_preview::preview_rebase(".", &target));
+            app.rebase_portal.scroll = 0;
+            app.rebase_portal.mode = app::RebasePortalMode::Preview;
+        }
+        Effect::ExecuteRebase(target) => {
+            // Preflight check first — never run rebase if safety fails.
+            let preflight_result = git::rebase_execute::preflight(".", &target);
+            let result = match preflight_result {
+                Some(blocked) => blocked,
+                None => git::rebase_execute::execute_rebase(".", &target),
+            };
+
+            // Seed the execute screen state from the preview we already have.
+            // If preview is absent (shouldn't happen via normal UI flow),
+            // fall back to an empty stub that still shows the outcome.
+            let preview_snapshot = app
+                .rebase_portal
+                .preview
+                .clone()
+                .unwrap_or_else(|| git::rebase_preview::RebasePreview {
+                    source: String::new(),
+                    target: target.clone(),
+                    source_tip: String::new(),
+                    target_tip: String::new(),
+                    merge_base: None,
+                    commits: vec![],
+                    truncated: false,
+                    has_merge_commits: false,
+                    dirty_tree: false,
+                    kind: git::rebase_preview::PreviewKind::Ready,
+                });
+            app.rebase_execute =
+                app::RebaseExecuteState::from_outcome(&preview_snapshot, &result);
+            app.screen = app::Screen::RebaseExecute;
+        }
+        Effect::AbortRebase => {
+            match git::rebase_execute::abort_rebase(".") {
+                Ok(()) => {
+                    app.rebase_execute.mode = app::RebaseExecuteMode::Aborted {
+                        message: "Rebase aborted. Your branch is back where it was.".into(),
+                        ok: true,
+                    };
+                }
+                Err(e) => {
+                    app.rebase_execute.mode = app::RebaseExecuteMode::Aborted {
+                        message: format!("Abort failed: {e}"),
+                        ok: false,
+                    };
+                }
+            }
+        }
+        Effect::ContinueRebase => {
+            use git::rebase_execute::ContinueResult;
+            match git::rebase_execute::continue_rebase(".") {
+                ContinueResult::Finished => {
+                    // The rebase is fully done. Advance the animation
+                    // playback to its last frame and show Success.
+                    app.rebase_execute.fell = false;
+                    let last = app
+                        .rebase_execute
+                        .commits
+                        .len()
+                        .saturating_sub(1);
+                    app.rebase_execute.step = last;
+                    app.rebase_execute.mode = app::RebaseExecuteMode::Success;
+                }
+                ContinueResult::AnotherConflict { stderr } => {
+                    // Stay in a conflict state, but make it explicit that
+                    // a *new* conflict followed the continue attempt.
+                    app.rebase_execute.fell = true;
+                    let annotated = if stderr.is_empty() {
+                        "Another conflict after continue. Resolve and press 'c' again.".to_string()
+                    } else {
+                        format!(
+                            "Another conflict after continue:\n{stderr}"
+                        )
+                    };
+                    app.rebase_execute.mode =
+                        app::RebaseExecuteMode::Conflict { stderr: annotated };
+                }
+                ContinueResult::Blocked { stderr } => {
+                    // Git refused to continue. Keep the user in the
+                    // conflict state so they can either resolve+stage and
+                    // retry, or abort.
+                    app.rebase_execute.fell = true;
+                    let annotated = if stderr.is_empty() {
+                        "Continue blocked. Resolve conflicts and `git add` them before retrying.".to_string()
+                    } else {
+                        format!(
+                            "Continue blocked:\n{stderr}\n\nResolve conflicts and `git add` the files, then press 'c' again."
+                        )
+                    };
+                    app.rebase_execute.mode =
+                        app::RebaseExecuteMode::Conflict { stderr: annotated };
+                }
+                ContinueResult::NotInRebase => {
+                    // Defensive — the screen thought we were in a rebase
+                    // but the on-disk state says otherwise.
+                    app.rebase_execute.mode = app::RebaseExecuteMode::Failure {
+                        message: "No rebase is currently in progress.".into(),
+                    };
+                }
+                ContinueResult::Error { message } => {
+                    app.rebase_execute.mode = app::RebaseExecuteMode::Failure {
+                        message: format!("Continue failed: {message}"),
+                    };
+                }
+            }
         }
     }
 }
