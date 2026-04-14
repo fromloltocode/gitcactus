@@ -237,6 +237,10 @@ fn render_footer(frame: &mut Frame, area: Rect) {
 }
 
 /// Render a generic placeholder screen for features not yet implemented.
+///
+/// Currently unused — every screen has a real renderer — but kept
+/// available for any future not-yet-built screens to re-use.
+#[allow(dead_code)]
 pub fn render_placeholder(frame: &mut Frame, area: Rect, name: &str) {
     let outer = Block::default()
         .borders(Borders::ALL)

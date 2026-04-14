@@ -43,7 +43,18 @@ fn read_only_screens_never_return_mutating_effects() {
             let effect = app.handle_action(action);
 
             match effect {
-                Effect::None | Effect::Quit => {} // safe
+                // No effect and quit are always safe.
+                Effect::None | Effect::Quit => {}
+                // Pure read loads are safe: they only refresh the
+                // screen's own view of disk/repo state.
+                Effect::RefreshStatus
+                | Effect::LoadHistory
+                | Effect::LoadBranches
+                | Effect::LoadDiff(_)
+                | Effect::LoadCommitDetails(_)
+                | Effect::LoadCommitDiff(_)
+                | Effect::LoadRebasePreview(_)
+                | Effect::LoadRemoteSync => {}
                 other => panic!(
                     "Screen {screen:?} returned mutating effect {other:?} for action {action:?}"
                 ),
