@@ -47,7 +47,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     .split(vert[0]);
 
     render_main_panel(frame, cols[0], app);
-    render_side_panel(frame, cols[1]);
+    render_side_panel(frame, cols[1], app);
     render_footer(frame, vert[1]);
 }
 
@@ -143,19 +143,21 @@ fn render_main_panel(frame: &mut Frame, area: Rect, app: &App) {
 
 // ── Right panel: cactus + explanation ─────────────────────────────────
 
-fn render_side_panel(frame: &mut Frame, area: Rect) {
+fn render_side_panel(frame: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::vertical([
         Constraint::Length(1),  // padding
         Constraint::Length(10), // cactus
         Constraint::Length(1),  // spacing
         Constraint::Length(5),  // tip
         Constraint::Length(1),  // spacing
+        Constraint::Length(5),  // theme status
+        Constraint::Length(1),  // spacing
         Constraint::Min(3),     // philosophy
     ])
     .split(area);
 
     let art = Paragraph::new(Text::from(cactus::small()))
-        .style(Style::default().fg(Color::White))
+        .style(Style::default().fg(app.theme.cactus))
         .alignment(Alignment::Center);
     frame.render_widget(art, chunks[1]);
 
@@ -174,6 +176,41 @@ fn render_side_panel(frame: &mut Frame, area: Rect) {
     .wrap(Wrap { trim: true });
     frame.render_widget(tip, chunks[3]);
 
+    // Theme info block — read-only for now. Edit in
+    // ~/.config/gitcactus/settings under theme=<preset> / theme.*=<color>.
+    let override_label = if app.theme.has_overrides() {
+        " (overrides active)"
+    } else {
+        ""
+    };
+    let theme_panel = Paragraph::new(Text::from(vec![
+        Line::from(Span::styled(
+            " Theme",
+            Style::default()
+                .fg(app.theme.primary)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(vec![
+            Span::styled(" preset: ", Style::default().fg(app.theme.muted)),
+            Span::styled(
+                app.theme.preset.label(),
+                Style::default()
+                    .fg(app.theme.highlight)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                override_label,
+                Style::default().fg(app.theme.warning),
+            ),
+        ]),
+        Line::from(Span::styled(
+            " edit via ~/.config/gitcactus/settings",
+            Style::default().fg(app.theme.muted),
+        )),
+    ]))
+    .wrap(Wrap { trim: true });
+    frame.render_widget(theme_panel, chunks[5]);
+
     let philosophy = Paragraph::new(Text::from(vec![
         Line::from(Span::styled(
             " Philosophy",
@@ -189,17 +226,9 @@ fn render_side_panel(frame: &mut Frame, area: Rect) {
             " Only the labels change.",
             Style::default().fg(Color::DarkGray),
         )),
-        Line::from(Span::styled(
-            " Hybrid mode teaches both",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
-            " vocabularies at once.",
-            Style::default().fg(Color::DarkGray),
-        )),
     ]))
     .wrap(Wrap { trim: true });
-    frame.render_widget(philosophy, chunks[5]);
+    frame.render_widget(philosophy, chunks[7]);
 }
 
 // ── Footer ───────────────────────────────────────────────────────────

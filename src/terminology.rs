@@ -251,7 +251,8 @@ impl Terms {
             6 => "Controls",
             7 => "Check for Updates",
             8 => "Settings",
-            9 => "Quit",
+            9 => "Skill Tree",
+            10 => "Quit",
             _ => "???",
         }
     }

@@ -71,6 +71,8 @@ pub enum Screen {
     DiffPreview,
     Settings,
     CommitDetails,
+    /// Local progression / skill tree screen.
+    SkillTree,
 }
 
 /// Main menu items, in display order.
@@ -84,11 +86,12 @@ pub const MENU_ITEMS: &[(&str, Screen)] = &[
     ("Controls", Screen::Help),
     ("Check for Updates", Screen::Update),
     ("Settings", Screen::Settings),
+    ("Skill Tree", Screen::SkillTree),
     ("Quit", Screen::Title), // sentinel — handled specially
 ];
 
 /// Index of the "Quit" entry in MENU_ITEMS.
-pub const QUIT_INDEX: usize = 9;
+pub const QUIT_INDEX: usize = 10;
 
 // ── Stage screen state ───────────────────────────────────────────────
 
@@ -818,6 +821,10 @@ pub struct App {
     /// Transient message from the last editor-open attempt.
     /// Rendered as a status banner until the next key press clears it.
     pub editor_msg: Option<(String, bool)>,
+    /// Active color theme (preset + optional overrides).
+    pub theme: crate::theme::Theme,
+    /// Local progression profile (XP, level, stats, unlocks).
+    pub profile: crate::profile::Profile,
 }
 
 impl Default for App {
@@ -848,6 +855,8 @@ impl App {
             branches_state: BranchesState::new(),
             commit_details: CommitDetailsState::new(),
             editor_msg: None,
+            theme: crate::theme::Theme::default(),
+            profile: crate::profile::Profile::default(),
         }
     }
 

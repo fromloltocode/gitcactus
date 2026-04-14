@@ -72,6 +72,51 @@ Set your preferred mode in `~/.config/gitcactus/settings`:
 terminology=beginner
 ```
 
+## Themes
+
+GitCactus ships with a restrained default palette. Pick a different
+preset — or override individual color roles — in
+`~/.config/gitcactus/settings`:
+
+```ini
+# Preset picks the whole palette.
+theme=matrix        # or: default, terminal_blue, retro_danger
+
+# Per-role overrides sit on top of a preset.
+theme.primary=blue
+theme.highlight=lightcyan
+```
+
+Available roles: `primary`, `success`, `warning`, `error`, `muted`,
+`cactus`, `highlight`. Unknown presets and invalid color names fall
+back silently — the app never fails to start because of theme config.
+
+The in-app **Settings** screen shows the current preset and flags when
+overrides are active. In-app editing of theme colors is planned for a
+later pass.
+
+See [docs/theme.md](docs/theme.md) for the full reference.
+
+## Local progression
+
+GitCactus has a lightweight local progression system: XP, levels,
+stats, unlocks, and a Skill Tree screen. Everything lives under
+`~/.config/gitcactus/profile`. It's cosmetic — **no Git feature is
+gated behind progression**.
+
+- Meaningful actions (commits, staging, branch creation, safe branch
+  switches, full status→stage→commit combos, clean rebases) earn XP.
+- Levels grow quadratically and cap at 100.
+- Unlocks are stored locally and never revoked.
+- The Skill Tree (main menu → Skill Tree) shows your progress in a
+  retro command-console style.
+
+Everything is **local-first**. No accounts, no network calls, no
+telemetry in this build. A future opt-in connection for friendly
+rankings is documented in
+[docs/progression.md](docs/progression.md) but explicitly out of
+scope here.
+
 ## Safety philosophy
 
 GitCactus will **never silently mutate your repository**. Every future git action will be:

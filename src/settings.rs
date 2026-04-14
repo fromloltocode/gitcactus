@@ -7,34 +7,33 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::terminology::TermMode;
+use crate::theme::Theme;
 
 pub struct Settings {
     /// Skip the retro intro animation on startup.
     pub skip_intro: bool,
     /// Which terminology mode to use.
     pub term_mode: TermMode,
+    /// Resolved theme (preset + any per-role overrides).
+    pub theme: Theme,
 }
 
 impl Settings {
     /// Load settings from disk, returning defaults if the file doesn't exist.
     pub fn load() -> Self {
+        let defaults = || Self {
+            skip_intro: false,
+            term_mode: TermMode::Hybrid,
+            theme: Theme::default(),
+        };
+
         let path = match Self::config_path() {
             Some(p) => p,
-            None => {
-                return Self {
-                    skip_intro: false,
-                    term_mode: TermMode::Hybrid,
-                }
-            }
+            None => return defaults(),
         };
         let content = match fs::read_to_string(&path) {
             Ok(c) => c,
-            Err(_) => {
-                return Self {
-                    skip_intro: false,
-                    term_mode: TermMode::Hybrid,
-                }
-            }
+            Err(_) => return defaults(),
         };
         let skip_intro = content.lines().any(|l| l.trim() == "skip_intro=true");
         let term_mode = content
@@ -45,9 +44,14 @@ impl Settings {
                     .and_then(TermMode::parse)
             })
             .unwrap_or(TermMode::Hybrid);
+        // Theme parsing is its own best-effort: unknown preset or invalid
+        // colors silently fall back to the default palette. The app never
+        // fails to start because of theme config.
+        let theme = Theme::from_config_lines(content.lines());
         Self {
             skip_intro,
             term_mode,
+            theme,
         }
     }
 

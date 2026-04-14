@@ -7,6 +7,7 @@ pub mod history;
 pub mod intro;
 pub mod menu;
 pub mod settings_screen;
+pub mod skill_tree;
 pub mod stage;
 pub mod status;
 pub mod title;

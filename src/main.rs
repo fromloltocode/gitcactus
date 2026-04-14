@@ -3,10 +3,16 @@ mod editor;
 mod git;
 mod input;
 mod mascot;
+#[allow(dead_code)]
+mod profile;
+#[allow(dead_code)]
+mod progression;
 mod screens;
 mod settings;
 #[allow(dead_code)]
 mod terminology;
+#[allow(dead_code)]
+mod theme;
 mod ui;
 mod update;
 
@@ -91,6 +97,11 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
     // Check settings — skip intro if already seen or --skip-intro flag.
     let user_settings = Settings::load();
     app.terms = terminology::Terms::new(user_settings.term_mode);
+    app.theme = user_settings.theme;
+
+    // Load local progression profile. Missing / malformed files fall back
+    // to an empty profile — progression is lightweight and local-only.
+    app.profile = profile::Profile::load();
 
     let skip_intro = user_settings.skip_intro
         || std::env::args().any(|a| a == "--skip-intro");
@@ -197,6 +208,12 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
                         format!("Staged {n} file{}.", if n == 1 { "" } else { "s" }),
                         true,
                     ));
+                    // Progression: reward meaningful staging only on success.
+                    progression::apply_event(
+                        &mut app.profile,
+                        progression::ProgressionEvent::FilesStaged(n as u32),
+                    );
+                    app.profile.save();
                 }
                 Err(e) => {
                     app.stage.result_msg = Some((e, false));
@@ -217,6 +234,18 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
                 Ok(hash) => {
                     app.commit.result_msg =
                         Some((format!("Commit {hash} created successfully!"), true));
+                    // Progression: commit earned. Also count a "combo" any
+                    // time the user creates a commit — by reaching this
+                    // point they have completed Status → Stage → Commit.
+                    progression::apply_event(
+                        &mut app.profile,
+                        progression::ProgressionEvent::CommitCreated,
+                    );
+                    progression::apply_event(
+                        &mut app.profile,
+                        progression::ProgressionEvent::ComboChainCompleted,
+                    );
+                    app.profile.save();
                 }
                 Err(e) => {
                     app.commit.result_msg = Some((e, false));
@@ -267,6 +296,11 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
                 CreateResult::Ok(created) => {
                     app.branches_state.result_msg =
                         Some((format!("Created '{created}'."), true));
+                    progression::apply_event(
+                        &mut app.profile,
+                        progression::ProgressionEvent::BranchCreated,
+                    );
+                    app.profile.save();
                 }
                 CreateResult::InvalidName(msg) => {
                     app.branches_state.result_msg = Some((msg, false));
@@ -292,6 +326,11 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
                         format!("Switched to '{branch}'."),
                         true,
                     ));
+                    progression::apply_event(
+                        &mut app.profile,
+                        progression::ProgressionEvent::BranchSwitched,
+                    );
+                    app.profile.save();
                 }
                 SwitchResult::DirtyWorkingTree => {
                     app.branches_state.result_msg = Some((
