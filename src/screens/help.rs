@@ -52,6 +52,11 @@ fn page_power() -> Vec<Move> {
         Move { keys: "Space \u{2192} Enter \u{2192} y", name: "STAGE COMBO", desc: "Select files, confirm, then stage them" },
         Move { keys: "type \u{2192} Enter \u{2192} y", name: "COMMIT COMBO", desc: "Write a message, confirm, then commit" },
         Move { keys: "Status \u{2192} Stage \u{2192} Commit", name: "FULL CHAIN", desc: "The complete Git workflow, one screen at a time" },
+        // Rebase Portal is the biggest multi-step operation in GitCactus —
+        // preview, confirm, execute, and optionally recover from a conflict.
+        // It belongs here with the other POWER combos and is flagged as
+        // "ULTIMATE" because it rewrites history.
+        Move { keys: "p \u{2192} Enter \u{2192} y \u{2192} c/a", name: "REBASE PORTAL (ULTIMATE)", desc: "Preview, confirm, replay; then continue or abort on conflict" },
         Move { keys: "--version", name: "IDENTITY", desc: "Show GitCactus version from the command line" },
     ]
 }
@@ -64,6 +69,10 @@ fn page_defensive() -> Vec<Move> {
         Move { keys: "(auto)", name: "SHIELD", desc: "GitCactus never changes your repo without asking" },
         Move { keys: "(auto)", name: "BARRIER", desc: "Empty commit messages are blocked" },
         Move { keys: "(auto)", name: "WARD", desc: "Staging requires explicit file selection" },
+        // Conflict safety is worth calling out explicitly alongside the
+        // other passive guards — Rebase Portal is the only place users
+        // can currently leave the app mid-operation.
+        Move { keys: "Esc in conflict", name: "SAFE STANCE", desc: "Leave the paused rebase exactly where it is" },
     ]
 }
 
