@@ -56,6 +56,7 @@ SETTINGS:
                        Plain-text key=value file. Supported keys:
                          skip_intro=true
                          terminology=beginner|hybrid|git
+                         animations=on|off
 
 Run gitcactus inside any git repository to explore and manage it
 through a terminal UI. See https://github.com/fromloltocode/gitcactus
@@ -98,6 +99,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
     let user_settings = Settings::load();
     app.terms = terminology::Terms::new(user_settings.term_mode);
     app.theme = user_settings.theme;
+    app.animations_enabled = user_settings.animations;
 
     // Load local progression profile. Missing / malformed files fall back
     // to an empty profile — progression is lightweight and local-only.
@@ -126,6 +128,14 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
             && matches!(app.rebase_execute.mode, app::RebaseExecuteMode::Animating)
         {
             180
+        } else if app
+            .animation
+            .as_ref()
+            .is_some_and(|a| a.phase == mascot::animations::AnimationPhase::Playing)
+        {
+            // Overlay animations run at ~8 fps so the full sequence
+            // lands in under 1 s before moving to the teaching panel.
+            120
         } else {
             250
         };
@@ -170,6 +180,11 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
         {
             // Advance the rebase playback animation one step per tick.
             let _ = app.rebase_execute.tick();
+        } else if let Some(anim) = app.animation.as_mut() {
+            // Advance the overlay animation one frame per tick.
+            // tick() flips to Teaching on the last frame and then
+            // waits for a user key press (see handle_action).
+            let _ = anim.tick();
         }
     }
 
@@ -504,6 +519,32 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
                     };
                 }
             }
+        }
+        Effect::LoadRemoteSync => {
+            app.remote_sync.info = git::remote::load_remote_info(".");
+            app.remote_sync.clamp_cursor();
+        }
+        Effect::FetchFromRemote(remote_name) => {
+            use git::remote::FetchResult;
+            let result = git::remote::fetch(".", &remote_name);
+            app.remote_sync.result_msg = Some(match result {
+                FetchResult::Ok { remote } => (
+                    format!("Fetched from '{remote}'. Remote view is up to date."),
+                    true,
+                ),
+                FetchResult::NoRemote => (
+                    "No remotes are configured in this repository.".into(),
+                    false,
+                ),
+                FetchResult::NoSuchRemote(name) => (
+                    format!("Remote '{name}' is not configured."),
+                    false,
+                ),
+                FetchResult::AuthFailed(msg) => (msg, false),
+                FetchResult::NetworkError(msg) => (msg, false),
+                FetchResult::Error(msg) => (msg, false),
+            });
+            app.remote_sync.mode = app::RemoteSyncMode::Result;
         }
     }
 }

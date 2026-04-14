@@ -63,6 +63,13 @@ pub enum Effect {
     /// Guarded at the git layer: refuses to run unless a rebase is
     /// actually in progress on disk.
     ContinueRebase,
+    /// Load a fresh snapshot of remote state for the Remote Sync screen.
+    /// Read-only: no network activity.
+    LoadRemoteSync,
+    /// Fetch from the named remote. Writes to `refs/remotes/<remote>/*`
+    /// only — never touches the working tree, index, HEAD, or local
+    /// branches.
+    FetchFromRemote(String),
 }
 
 /// The screens the app can display.
@@ -972,6 +979,97 @@ impl SettingsState {
     }
 }
 
+// ── Remote Sync screen state ────────────────────────────────────────
+
+/// Sub-mode for the Remote Sync screen.
+///
+/// The screen is visibility-first: Browse is read-only. Confirming a
+/// fetch is the *only* way to trigger network activity, and the Result
+/// mode reports the outcome. Push/Pull are deliberately not modelled
+/// yet — they will get their own modes when implemented.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoteSyncMode {
+    /// Read-only view of remotes + tracking info.
+    Browse,
+    /// Confirmation dialog before running a fetch.
+    ConfirmFetch,
+    /// Showing the result of the last fetch attempt.
+    Result,
+}
+
+/// State for the Remote Sync screen.
+pub struct RemoteSyncState {
+    /// Last-loaded snapshot of remote state.
+    pub info: crate::git::remote::RemoteInfo,
+    /// Currently highlighted remote index (into `info.remotes`).
+    pub cursor: usize,
+    pub mode: RemoteSyncMode,
+    /// Result message from the last fetch (message, is_success).
+    pub result_msg: Option<(String, bool)>,
+}
+
+impl Default for RemoteSyncState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RemoteSyncState {
+    pub fn new() -> Self {
+        Self {
+            info: crate::git::remote::RemoteInfo {
+                remotes: vec![],
+                current_branch: None,
+                tracking: None,
+                is_real: false,
+                error: None,
+            },
+            cursor: 0,
+            mode: RemoteSyncMode::Browse,
+            result_msg: None,
+        }
+    }
+
+    pub fn move_up(&mut self) {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+        }
+    }
+
+    pub fn move_down(&mut self) {
+        if !self.info.remotes.is_empty() && self.cursor + 1 < self.info.remotes.len() {
+            self.cursor += 1;
+        }
+    }
+
+    /// Keep the cursor in-bounds when the remote list shrinks.
+    pub fn clamp_cursor(&mut self) {
+        let n = self.info.remotes.len();
+        if n == 0 {
+            self.cursor = 0;
+        } else if self.cursor >= n {
+            self.cursor = n - 1;
+        }
+    }
+
+    /// The remote the cursor currently points at, if any.
+    pub fn selected_remote(&self) -> Option<&crate::git::remote::RemoteEntry> {
+        self.info.remotes.get(self.cursor)
+    }
+
+    /// Preferred remote name for a fetch action.
+    ///
+    /// - If the current branch has an upstream, use that remote.
+    /// - Otherwise use the highlighted remote.
+    /// - Otherwise `None` (no remotes configured).
+    pub fn fetch_target(&self) -> Option<String> {
+        if let Some(t) = &self.info.tracking {
+            return Some(t.remote_name.clone());
+        }
+        self.selected_remote().map(|r| r.name.clone())
+    }
+}
+
 pub struct App {
     /// Which screen is currently shown.
     pub screen: Screen,
@@ -1012,6 +1110,16 @@ pub struct App {
     pub rebase_portal: RebasePortalState,
     /// State for the Rebase execute / animation screen.
     pub rebase_execute: RebaseExecuteState,
+    /// State for the Remote Sync screen.
+    pub remote_sync: RemoteSyncState,
+    /// Active overlay animation, if any. `None` = normal operation.
+    ///
+    /// Set via `mascot::animations::play_*` after a successful Clone,
+    /// Pull, or Push. Advanced by the main loop on idle ticks; cleared
+    /// when the user dismisses the teaching panel.
+    pub animation: Option<crate::mascot::animations::AnimationState>,
+    /// Whether overlay animations are enabled (from Settings).
+    pub animations_enabled: bool,
 }
 
 impl Default for App {
@@ -1046,6 +1154,9 @@ impl App {
             profile: crate::profile::Profile::default(),
             rebase_portal: RebasePortalState::new(),
             rebase_execute: RebaseExecuteState::new(),
+            remote_sync: RemoteSyncState::new(),
+            animation: None,
+            animations_enabled: true,
         }
     }
 
@@ -1097,6 +1208,20 @@ impl App {
     /// The event loop is responsible for carrying out any returned effect
     /// (I/O, git operations, etc.) and feeding the results back in.
     pub fn handle_action(&mut self, action: Action) -> Effect {
+        // When an overlay animation is active, any key press is the
+        // skip / dismiss gesture. We intercept here so animations are
+        // universally skippable regardless of which screen triggered
+        // them, and no per-screen handler needs to know about it.
+        if let Some(anim) = self.animation.as_mut() {
+            use crate::mascot::animations::AnimationPhase;
+            let _ = action; // any key
+            match anim.phase {
+                AnimationPhase::Playing => anim.skip_to_teaching(),
+                AnimationPhase::Teaching => self.animation = None,
+            }
+            return Effect::None;
+        }
+
         match self.screen {
             // ── Intro ────────────────────────────────────────────
             Screen::Intro => {
@@ -1143,6 +1268,7 @@ impl App {
                         }
                         Screen::History => Effect::LoadHistory,
                         Screen::Branches => Effect::LoadBranches,
+                        Screen::RemoteSync => Effect::LoadRemoteSync,
                         _ => Effect::None,
                     }
                 }
@@ -1698,6 +1824,62 @@ impl App {
                     // Any key dismisses the result overlay.
                     self.update.mode = UpdateMode::Main;
                     Effect::None
+                }
+            },
+
+            // ── Remote Sync ───────────────────────────────────────
+            //
+            // Browse is strictly read-only. A fetch requires passing
+            // through ConfirmFetch → explicit Confirm/Select. Push and
+            // Pull are intentionally not handled yet; keys that would
+            // trigger them fall through to Effect::None.
+            Screen::RemoteSync => match self.remote_sync.mode {
+                RemoteSyncMode::Browse => match action {
+                    Action::Quit => Effect::Quit,
+                    Action::Back => {
+                        self.back_to_menu();
+                        Effect::None
+                    }
+                    Action::MoveUp => {
+                        self.remote_sync.move_up();
+                        Effect::None
+                    }
+                    Action::MoveDown => {
+                        self.remote_sync.move_down();
+                        Effect::None
+                    }
+                    Action::Refresh => Effect::LoadRemoteSync,
+                    Action::Select => {
+                        // Only arm a fetch if we actually have a remote
+                        // to fetch from. Otherwise the screen stays a
+                        // pure viewer — no accidental network traffic.
+                        if self.remote_sync.fetch_target().is_some() {
+                            self.remote_sync.mode = RemoteSyncMode::ConfirmFetch;
+                        }
+                        Effect::None
+                    }
+                    _ => Effect::None,
+                },
+                RemoteSyncMode::ConfirmFetch => match action {
+                    Action::Confirm | Action::Select => {
+                        if let Some(remote) = self.remote_sync.fetch_target() {
+                            Effect::FetchFromRemote(remote)
+                        } else {
+                            self.remote_sync.mode = RemoteSyncMode::Browse;
+                            Effect::None
+                        }
+                    }
+                    Action::Deny | Action::Back => {
+                        self.remote_sync.mode = RemoteSyncMode::Browse;
+                        Effect::None
+                    }
+                    _ => Effect::None,
+                },
+                RemoteSyncMode::Result => {
+                    // Any key dismisses the result and reloads the
+                    // (read-only) remote info so ahead/behind refresh.
+                    self.remote_sync.mode = RemoteSyncMode::Browse;
+                    Effect::LoadRemoteSync
                 }
             },
 

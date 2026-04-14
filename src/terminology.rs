@@ -356,6 +356,35 @@ impl Terms {
         }
     }
 
+    pub fn title_remote_sync(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => " Sync with Team ",
+            TermMode::Hybrid => " Remote Sync ",
+            TermMode::Git => " Remote Sync ",
+        }
+    }
+
+    /// One-sentence, plain-English explanation of what a "remote" is.
+    pub fn remote_description(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => {
+                "A remote is a copy of your project on another machine \
+                 (like GitHub). Fetch pulls down its latest state without \
+                 changing your work."
+            }
+            TermMode::Hybrid => {
+                "A remote is a named link to another copy of the repo \
+                 (usually on a server). Fetch updates your local view of \
+                 it without touching your branches."
+            }
+            TermMode::Git => {
+                "Fetch downloads refs and objects from the named remote \
+                 into refs/remotes/<remote>/*. It does not modify HEAD, \
+                 the index, the working tree, or any local branch."
+            }
+        }
+    }
+
     /// A short label showing the current terminology mode.
     pub fn mode_label(&self) -> &'static str {
         match self.mode {

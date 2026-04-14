@@ -8,6 +8,7 @@ pub mod intro;
 pub mod menu;
 pub mod rebase_execute;
 pub mod rebase_portal;
+pub mod remote_sync;
 pub mod settings_screen;
 pub mod skill_tree;
 pub mod stage;

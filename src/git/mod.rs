@@ -5,5 +5,6 @@ pub mod diff;
 pub mod history;
 pub mod rebase_execute;
 pub mod rebase_preview;
+pub mod remote;
 pub mod stage;
 pub mod status;

@@ -16,6 +16,9 @@ pub struct Settings {
     pub term_mode: TermMode,
     /// Resolved theme (preset + any per-role overrides).
     pub theme: Theme,
+    /// Whether to play overlay animations after successful
+    /// Clone / Pull / Push operations. Defaults to on.
+    pub animations: bool,
 }
 
 impl Settings {
@@ -25,6 +28,7 @@ impl Settings {
             skip_intro: false,
             term_mode: TermMode::Hybrid,
             theme: Theme::default(),
+            animations: true,
         };
 
         let path = match Self::config_path() {
@@ -48,10 +52,17 @@ impl Settings {
         // colors silently fall back to the default palette. The app never
         // fails to start because of theme config.
         let theme = Theme::from_config_lines(content.lines());
+        // animations defaults to on; only the explicit "animations=off"
+        // (or =false) turns them off. Any other value keeps the default.
+        let animations = !content.lines().any(|l| {
+            let t = l.trim();
+            t == "animations=off" || t == "animations=false"
+        });
         Self {
             skip_intro,
             term_mode,
             theme,
+            animations,
         }
     }
 
