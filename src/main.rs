@@ -163,6 +163,44 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
     Ok(())
 }
 
+/// Apply one or more progression events, save the profile, and surface
+/// a single, coalesced "+N XP" banner in `app.editor_msg`.
+///
+/// Why coalesce? A commit produces two events back-to-back
+/// (CommitCreated + ComboChainCompleted) that should read as "+40 XP",
+/// not two flashes. Staging N files is already one event, so
+/// naturally one banner.
+///
+/// The banner piggy-backs on the existing editor-message system: it
+/// appears at the bottom of the current screen and is dismissed by the
+/// next key press. No modals, no input blocking, no stacking.
+fn award_xp(app: &mut App, events: &[progression::ProgressionEvent]) {
+    if events.is_empty() {
+        return;
+    }
+    let xp_before = app.profile.xp;
+    let level_before = app.profile.level;
+
+    for &event in events {
+        progression::apply_event(&mut app.profile, event);
+    }
+    app.profile.save();
+
+    let gained = app.profile.xp.saturating_sub(xp_before);
+    if gained == 0 {
+        return;
+    }
+
+    let leveled_up = app.profile.level > level_before;
+    let msg = if leveled_up {
+        format!("\u{1F335} +{gained} XP \u{2014} LVL {}!", app.profile.level)
+    } else {
+        format!("\u{1F335} +{gained} XP")
+    };
+    // Overwrites any prior transient banner — "only show latest event".
+    app.editor_msg = Some((msg, true));
+}
+
 /// Suspend the TUI, run the user's editor for `path`, then restore the TUI.
 fn suspend_and_open_editor(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -209,11 +247,10 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
                         true,
                     ));
                     // Progression: reward meaningful staging only on success.
-                    progression::apply_event(
-                        &mut app.profile,
-                        progression::ProgressionEvent::FilesStaged(n as u32),
+                    award_xp(
+                        app,
+                        &[progression::ProgressionEvent::FilesStaged(n as u32)],
                     );
-                    app.profile.save();
                 }
                 Err(e) => {
                     app.stage.result_msg = Some((e, false));
@@ -237,15 +274,13 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
                     // Progression: commit earned. Also count a "combo" any
                     // time the user creates a commit — by reaching this
                     // point they have completed Status → Stage → Commit.
-                    progression::apply_event(
-                        &mut app.profile,
-                        progression::ProgressionEvent::CommitCreated,
+                    award_xp(
+                        app,
+                        &[
+                            progression::ProgressionEvent::CommitCreated,
+                            progression::ProgressionEvent::ComboChainCompleted,
+                        ],
                     );
-                    progression::apply_event(
-                        &mut app.profile,
-                        progression::ProgressionEvent::ComboChainCompleted,
-                    );
-                    app.profile.save();
                 }
                 Err(e) => {
                     app.commit.result_msg = Some((e, false));
@@ -296,11 +331,10 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
                 CreateResult::Ok(created) => {
                     app.branches_state.result_msg =
                         Some((format!("Created '{created}'."), true));
-                    progression::apply_event(
-                        &mut app.profile,
-                        progression::ProgressionEvent::BranchCreated,
+                    award_xp(
+                        app,
+                        &[progression::ProgressionEvent::BranchCreated],
                     );
-                    app.profile.save();
                 }
                 CreateResult::InvalidName(msg) => {
                     app.branches_state.result_msg = Some((msg, false));
@@ -326,11 +360,10 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
                         format!("Switched to '{branch}'."),
                         true,
                     ));
-                    progression::apply_event(
-                        &mut app.profile,
-                        progression::ProgressionEvent::BranchSwitched,
+                    award_xp(
+                        app,
+                        &[progression::ProgressionEvent::BranchSwitched],
                     );
-                    app.profile.save();
                 }
                 SwitchResult::DirtyWorkingTree => {
                     app.branches_state.result_msg = Some((
