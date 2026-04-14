@@ -242,6 +242,7 @@ fn render_footer(frame: &mut Frame, area: Rect) {
     render_help_bar(frame, area, &[
         ("\u{2191}/\u{2193}/w/s", "scroll"),
         ("d/Enter", "view diff"),
+        ("o", "open 1st file"),
         ("Esc", "back"),
         ("q", "quit"),
     ]);

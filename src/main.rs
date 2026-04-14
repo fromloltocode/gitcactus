@@ -1,4 +1,5 @@
 mod app;
+mod editor;
 mod git;
 mod input;
 mod mascot;
@@ -85,13 +86,24 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                     continue;
                 }
 
+                // Any key press dismisses a lingering editor message.
+                app.editor_msg = None;
+
                 let action = if app.needs_text_input() {
                     map_key_text(key.code)
                 } else {
                     map_key(key.code)
                 };
                 let effect = app.handle_action(action);
-                handle_effect(&mut app, effect, &mut repo_status);
+
+                // OpenEditor needs terminal access to suspend/restore the TUI,
+                // so handle it inline before delegating to handle_effect.
+                if let Effect::OpenEditor(path) = effect {
+                    let result = suspend_and_open_editor(terminal, &path);
+                    app.editor_msg = Some(editor::result_message(&result));
+                } else {
+                    handle_effect(&mut app, effect, &mut repo_status);
+                }
                 if app.should_quit {
                     break;
                 }
@@ -107,6 +119,30 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
     }
 
     Ok(())
+}
+
+/// Suspend the TUI, run the user's editor for `path`, then restore the TUI.
+fn suspend_and_open_editor(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    path: &str,
+) -> editor::EditorResult {
+    // Tear down the alternate screen and raw mode so the editor has full
+    // control of the terminal. Use `let _ =` so a failure here doesn't
+    // prevent the editor attempt — we'll still report any error.
+    let _ = disable_raw_mode();
+    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+    let _ = terminal.show_cursor();
+
+    let result = editor::open_in_editor(path);
+
+    // Restore the TUI. If any of these fail, the next draw call will
+    // typically surface the error and exit cleanly via the normal path.
+    let _ = enable_raw_mode();
+    let _ = execute!(terminal.backend_mut(), EnterAlternateScreen);
+    let _ = terminal.clear();
+    let _ = terminal.hide_cursor();
+
+    result
 }
 
 fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::RepoStatus) {
@@ -237,6 +273,10 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
                 }
             }
             app.branches_state.mode = app::BranchesMode::Result;
+        }
+        Effect::OpenEditor(_) => {
+            // Handled inline in the event loop so we have terminal access
+            // to suspend/restore the TUI. This arm should be unreachable.
         }
     }
 }

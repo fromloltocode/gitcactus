@@ -211,6 +211,7 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
         ("\u{2191}/\u{2193}/w/s", "move"),
         ("Space", "toggle"),
         ("d", "diff"),
+        ("o", "open"),
         ("a", "all"),
         ("r", "refresh"),
     ];

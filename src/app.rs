@@ -49,6 +49,9 @@ pub enum Effect {
     LoadCommitDetails(String),
     /// Load a diff for the given commit vs its parent (read-only).
     LoadCommitDiff(String),
+    /// Open the given file path in the user's $EDITOR.
+    /// The event loop is responsible for suspending the TUI before this.
+    OpenEditor(String),
 }
 
 /// The screens the app can display.
@@ -812,6 +815,9 @@ pub struct App {
     pub branches_state: BranchesState,
     /// State for the Commit Details screen.
     pub commit_details: CommitDetailsState,
+    /// Transient message from the last editor-open attempt.
+    /// Rendered as a status banner until the next key press clears it.
+    pub editor_msg: Option<(String, bool)>,
 }
 
 impl Default for App {
@@ -841,6 +847,7 @@ impl App {
             history: HistoryState::new(),
             branches_state: BranchesState::new(),
             commit_details: CommitDetailsState::new(),
+            editor_msg: None,
         }
     }
 
@@ -975,6 +982,12 @@ impl App {
                             self.diff.return_to = Screen::Stage;
                             self.screen = Screen::DiffPreview;
                             return Effect::LoadDiff(path);
+                        }
+                        Effect::None
+                    }
+                    Action::Open => {
+                        if let Some(entry) = self.stage.entries.get(self.stage.cursor) {
+                            return Effect::OpenEditor(entry.path.clone());
                         }
                         Effect::None
                     }
@@ -1298,6 +1311,14 @@ impl App {
                         self.diff.return_to = Screen::CommitDetails;
                         self.screen = Screen::DiffPreview;
                         Effect::LoadCommitDiff(hash)
+                    } else {
+                        Effect::None
+                    }
+                }
+                Action::Open => {
+                    // Open the first file in the change list in $EDITOR.
+                    if let Some(f) = self.commit_details.details.files.first() {
+                        Effect::OpenEditor(f.path.clone())
                     } else {
                         Effect::None
                     }

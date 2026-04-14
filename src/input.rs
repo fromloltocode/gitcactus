@@ -35,6 +35,8 @@ pub enum Action {
     Preview,
     /// Open search / filter mode (/).
     Search,
+    /// Open the selected item in the user's editor (o).
+    Open,
     /// Backspace (used in text-input mode).
     Backspace,
     /// A key that doesn't map to a specific command — used for
@@ -60,6 +62,7 @@ pub fn map_key(code: KeyCode) -> Action {
         KeyCode::Char('n') => Action::Deny,
         KeyCode::Char('d') => Action::Preview,
         KeyCode::Char('/') => Action::Search,
+        KeyCode::Char('o') => Action::Open,
         _ => Action::Other,
     }
 }
