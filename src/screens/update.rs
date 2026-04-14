@@ -264,13 +264,13 @@ fn render_release_notes(frame: &mut Frame, area: Rect, app: &App) {
 // ── "Not yet implemented" result ─────────────────────────────────────
 
 fn render_result_dialog(frame: &mut Frame, area: Rect) {
-    let dialog = centered_rect(55, 8, area);
+    let dialog = centered_rect(62, 12, area);
     frame.render_widget(Clear, dialog);
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow))
-        .title(" Update ")
+        .title(" How to Update ")
         .title_alignment(Alignment::Center);
     let inner = block.inner(dialog);
     frame.render_widget(block, dialog);
@@ -278,20 +278,43 @@ fn render_result_dialog(frame: &mut Frame, area: Rect) {
     let text = Paragraph::new(Text::from(vec![
         Line::from(""),
         Line::from(Span::styled(
-            "  Self-update is not yet implemented.",
+            "  Built-in self-update isn't available yet.",
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from(Span::styled(
-            "  For now, pull the latest source and rebuild:",
+            "  In the meantime, update via:",
             Style::default().fg(Color::DarkGray),
         )),
-        Line::from(Span::styled(
-            "  git pull && cargo build --release",
-            Style::default().fg(Color::White),
-        )),
+        Line::from(vec![
+            Span::styled("    \u{2022} ", Style::default().fg(Color::Cyan)),
+            Span::styled(
+                "brew upgrade gitcactus",
+                Style::default().fg(Color::White),
+            ),
+            Span::styled("  (Homebrew tap)", Style::default().fg(Color::DarkGray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    \u{2022} ", Style::default().fg(Color::Cyan)),
+            Span::styled(
+                "GitHub Releases",
+                Style::default().fg(Color::White),
+            ),
+            Span::styled(
+                "  (prebuilt binaries, planned)",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("    \u{2022} ", Style::default().fg(Color::Cyan)),
+            Span::styled(
+                "git pull && cargo build --release",
+                Style::default().fg(Color::White),
+            ),
+            Span::styled("  (from source)", Style::default().fg(Color::DarkGray)),
+        ]),
         Line::from(""),
         Line::from(Span::styled(
             "  Press any key to close.",

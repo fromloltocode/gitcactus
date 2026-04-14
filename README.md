@@ -15,19 +15,40 @@ A retro-inspired terminal Git assistant that makes version control more intuitiv
 
 GitCactus is a terminal-native Git assistant built in Rust. It aims to be modern, tasteful, slightly game-like, and beginner-friendly without becoming childish. Think "fun developer tool," not "toy."
 
+## Why GitCactus?
+
+Most Git UIs sit on opposite ends: plain `git` (powerful but intimidating) or full GUI clients (fine, but they pull you out of the terminal).
+
+GitCactus aims to be the middle ground:
+
+- **Terminal-native** — it lives where you already work.
+- **Safe by default** — no operation mutates your repo without an explicit confirmation step.
+- **Teaches Git** — the Hybrid terminology mode shows "Checkpoint (Commit)" so beginners learn the real words over time rather than being walled off from them.
+- **Searchable** — press `/` to filter history and branches instantly.
+- **Editor-friendly** — press `o` to open the selected file in `$EDITOR`.
+- **Keyboard-first** — arrow keys, Vim-style (`j/k`), and WASD all work everywhere.
+
 ## Status
 
-**v0.1.0 — Early development.** The TUI skeleton is in place with a title screen, navigable main menu, a live git status screen, and placeholder screens for upcoming features. No destructive git operations are implemented yet.
+**v0.1.0 — Early development but actively usable.** Core workflows are implemented: status, interactive staging, commit, commit history, commit details, diff preview, branch list with safe switching and creation, and settings for terminology mode. Remote sync is still a placeholder.
 
 ## Features
 
-- Retro-styled title screen with ASCII cactus mascot
-- Keyboard-navigable main menu (arrow keys, j/k, Enter)
-- Live git status view (branch, modified/staged/untracked file lists)
+- Retro 80s/90s-style intro animation (skippable, remembered in settings)
+- Keyboard-navigable main menu (arrow keys, j/k/w/s, Enter)
+- Live git status view with branch + grouped file lists
 - Interactive staging with file selection and confirmation
+- Guided commit flow with inline message input
+- Commit history browser with search (`/`) and scrollable entries
+- Commit details view with file-change summary
+- Read-only diff preview (`d`) for working-tree files and historical commits
+- Branches / Saved Paths screen with safe switching and "New Game" branch creation
+- Terminology modes — Beginner / Hybrid (default) / Git — switchable in-app
+- In-app Settings screen
 - Check for Updates screen with version display and release notes
-- `--version` / `-V` CLI flag
-- Placeholder screens for: Commit, Branches, History, Remote Sync, Help
+- "Open in Editor" (`o`) using `$EDITOR` with safe fallbacks
+- Fighting-game-inspired Controls / command list
+- CLI flags: `--help`, `--version`, `--intro`, `--skip-intro`
 - Clean terminal setup and teardown
 
 ## Beginner-Friendly Terminology
@@ -60,29 +81,64 @@ GitCactus will **never silently mutate your repository**. Every future git actio
 
 ## Install
 
-### Prerequisites
+### Homebrew (recommended on macOS/Linuxbrew)
+
+GitCactus is distributed through a custom Homebrew tap:
+
+```bash
+brew install fromloltocode/tap/gitcactus
+```
+
+Update later with:
+
+```bash
+brew upgrade gitcactus
+```
+
+> The longer-term goal is to publish to `homebrew-core` so the install
+> command collapses to `brew install gitcactus`. For now the custom tap
+> keeps release cadence flexible.
+
+### Prebuilt binaries (planned)
+
+Tagged releases on GitHub will include prebuilt binaries for:
+
+- macOS (`x86_64`, `aarch64`)
+- Linux (`x86_64`)
+
+Download from the [Releases page](https://github.com/fromloltocode/gitcactus/releases), extract, and move `gitcactus` into your `PATH`.
+
+### Build from source
+
+Prerequisites:
 
 - [Rust](https://rustup.rs/) (1.70+)
 - A C compiler (for `libgit2` — usually already installed on macOS/Linux)
-- [just](https://github.com/casey/just) (optional, for task runner commands)
-
-### Build and run
+- [just](https://github.com/casey/just) (optional, for dev task runner)
 
 ```bash
-cargo run
-```
-
-Or with `just`:
-
-```bash
-just run
-```
-
-### Build for release
-
-```bash
+git clone https://github.com/fromloltocode/gitcactus.git
+cd gitcactus
 cargo build --release
 ./target/release/gitcactus
+```
+
+Or for development: `cargo run`.
+
+### Editor integration
+
+GitCactus reads `$EDITOR` when you press `o` to open a file. If it's
+unset, it falls back (in order) to `nvim`, `vim`, `vi`, `nano`, `code`,
+`emacs`. If `EDITOR` contains arguments (e.g. `"code --wait"`), the
+whole string is honored so non-blocking editors can wait properly.
+
+### CLI flags
+
+```text
+gitcactus --help         # print help
+gitcactus --version      # print version
+gitcactus --intro        # force the retro intro animation
+gitcactus --skip-intro   # skip the intro this session
 ```
 
 ## Usage
@@ -136,19 +192,29 @@ just ci       # all of the above
 
 ## Roadmap
 
-Phase 2 goals:
+Shipped:
 
-- [ ] Stage changes interactively (file picker with preview)
-- [ ] Commit with message editor
-- [ ] Branch list with create/switch/delete
-- [ ] Commit history browser
+- [x] Interactive staging with preview (diff for highlighted file)
+- [x] Guided commit flow with message input
+- [x] Commit history browser with search
+- [x] Commit details view
+- [x] Branch list with safe switching and creation ("New Game")
+- [x] Controls / command-list screen
+- [x] Settings screen for terminology mode
+- [x] "Open in Editor" using `$EDITOR`
+- [x] Homebrew tap support
+
+Planned:
+
 - [ ] Remote sync (fetch/pull/push) with confirmation
-- [ ] Help screen with contextual git explanations
-- [ ] Cactus tips that rotate based on context
+- [ ] Prebuilt release binaries on GitHub Releases
+- [ ] Self-update via the in-app update screen
 - [ ] Color theme system
-- [ ] Self-update (download and install new versions from within the app)
+- [ ] File-level cursor inside commit details
+- [ ] Publication to `homebrew-core`
 
-See the [CONTRIBUTING.md](CONTRIBUTING.md) guide if you'd like to help.
+See the [CONTRIBUTING.md](CONTRIBUTING.md) guide if you'd like to help,
+and [docs/releasing.md](docs/releasing.md) for the release process.
 
 ## License
 

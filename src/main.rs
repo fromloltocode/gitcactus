@@ -29,7 +29,38 @@ use git::status::read_status;
 use input::{map_key, map_key_text};
 use settings::Settings;
 
+const HELP_TEXT: &str = "\
+GitCactus — a retro-inspired terminal Git assistant.
+
+USAGE:
+    gitcactus [FLAGS]
+
+FLAGS:
+    -h, --help         Print this help message and exit
+    -V, --version      Print version information and exit
+        --intro        Show the intro animation even if previously seen
+        --skip-intro   Skip the intro animation on startup
+
+ENVIRONMENT:
+    EDITOR             Editor used by the \"Open in Editor\" action.
+                       Falls back to nvim, vim, vi, nano, code, emacs.
+
+SETTINGS:
+    ~/.config/gitcactus/settings
+                       Plain-text key=value file. Supported keys:
+                         skip_intro=true
+                         terminology=beginner|hybrid|git
+
+Run gitcactus inside any git repository to explore and manage it
+through a terminal UI. See https://github.com/fromloltocode/gitcactus
+";
+
 fn main() -> io::Result<()> {
+    // Handle --help flag before entering TUI mode.
+    if std::env::args().any(|a| a == "--help" || a == "-h") {
+        print!("{HELP_TEXT}");
+        return Ok(());
+    }
     // Handle --version flag before entering TUI mode.
     if std::env::args().any(|a| a == "--version" || a == "-V") {
         println!("gitcactus {}", update::VERSION);
