@@ -94,7 +94,17 @@ fn render_main_panel(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::from(""));
 
     // Status badge
-    if up_to_date {
+    let check_err = info.and_then(|i| i.error.as_deref());
+    if let Some(err) = check_err {
+        lines.push(Line::from(Span::styled(
+            "  ! Could not check for updates",
+            Style::default().fg(Color::Yellow),
+        )));
+        lines.push(Line::from(Span::styled(
+            format!("    {err}"),
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else if up_to_date {
         lines.push(Line::from(Span::styled(
             "  ✓ You're up to date!",
             Style::default().fg(Color::Green),
@@ -149,9 +159,9 @@ fn render_side_panel(frame: &mut Frame, area: Rect, app: &App) {
     ])
     .split(area);
 
-    // Cactus art
+    // Cactus art — color tracks the active theme.
     let art = Paragraph::new(Text::from(cactus::small()))
-        .style(Style::default().fg(Color::White))
+        .style(Style::default().fg(app.theme.cactus))
         .alignment(Alignment::Center);
     frame.render_widget(art, chunks[1]);
 

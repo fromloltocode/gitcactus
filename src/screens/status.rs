@@ -8,12 +8,13 @@ use crate::git::status::RepoStatus;
 use crate::mascot::cactus;
 use crate::screens::render_help_bar;
 use crate::terminology::Terms;
+use crate::theme::Theme;
 
 /// Render the status screen with a two-column layout:
 ///   Left  — file status grouped by category
 ///   Right — cactus mascot + contextual tip + educational note
 ///   Bottom — keybinding footer
-pub fn render(frame: &mut Frame, area: Rect, repo: &RepoStatus, terms: &Terms) {
+pub fn render(frame: &mut Frame, area: Rect, repo: &RepoStatus, terms: &Terms, theme: &Theme) {
     let outer = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::DarkGray))
@@ -37,7 +38,7 @@ pub fn render(frame: &mut Frame, area: Rect, repo: &RepoStatus, terms: &Terms) {
     .split(vert[0]);
 
     render_main_panel(frame, cols[0], repo, terms);
-    render_side_panel(frame, cols[1], repo);
+    render_side_panel(frame, cols[1], repo, theme);
     render_footer(frame, vert[1]);
 }
 
@@ -164,7 +165,7 @@ fn push_group<'a>(
 
 // ── Side panel: cactus + tip + educational note ──────────────────────
 
-fn render_side_panel(frame: &mut Frame, area: Rect, repo: &RepoStatus) {
+fn render_side_panel(frame: &mut Frame, area: Rect, repo: &RepoStatus, theme: &Theme) {
     let chunks = Layout::vertical([
         Constraint::Length(1),  // top padding
         Constraint::Length(10), // cactus art
@@ -175,9 +176,9 @@ fn render_side_panel(frame: &mut Frame, area: Rect, repo: &RepoStatus) {
     ])
     .split(area);
 
-    // Cactus art
+    // Cactus art — color tracks the active theme.
     let art = Paragraph::new(Text::from(cactus::small()))
-        .style(Style::default().fg(Color::White))
+        .style(Style::default().fg(theme.cactus))
         .alignment(Alignment::Center);
     frame.render_widget(art, chunks[1]);
 

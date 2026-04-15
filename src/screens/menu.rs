@@ -68,11 +68,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     ])
     .split(inner);
 
-    render_sidebar(frame, columns[0]);
+    render_sidebar(frame, columns[0], app);
     render_menu(frame, columns[1], app);
 }
 
-fn render_sidebar(frame: &mut Frame, area: Rect) {
+fn render_sidebar(frame: &mut Frame, area: Rect, app: &App) {
     let block = Block::default()
         .borders(Borders::RIGHT)
         .border_style(Style::default().fg(Color::DarkGray));
@@ -87,8 +87,11 @@ fn render_sidebar(frame: &mut Frame, area: Rect) {
     ])
     .split(inner);
 
+    // Cactus mascot color tracks the active theme (theme.cactus).
+    // Every "normal" screen does the same — the mascot is the most
+    // visible theme signal.
     let art = Paragraph::new(Text::from(cactus::small()))
-        .style(Style::default().fg(Color::White))
+        .style(Style::default().fg(app.theme.cactus))
         .alignment(Alignment::Center);
     frame.render_widget(art, chunks[1]);
 
@@ -122,10 +125,14 @@ fn render_menu(frame: &mut Frame, area: Rect, app: &App) {
         .enumerate()
         .map(|(i, _)| {
             let label = app.terms.menu_label(i);
+            // Selected-item highlight uses the theme's `highlight`
+            // role so the main menu visibly adopts the active theme.
+            // Black fg stays legible against every preset's highlight
+            // color (White / LightBlue / LightGreen / White).
             let style = if i == app.menu_index {
                 Style::default()
                     .fg(Color::Black)
-                    .bg(Color::White)
+                    .bg(app.theme.highlight)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Gray)

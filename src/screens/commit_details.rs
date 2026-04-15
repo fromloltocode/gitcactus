@@ -185,8 +185,9 @@ fn render_side_panel(frame: &mut Frame, area: Rect, app: &App) {
     ])
     .split(area);
 
+    // Cactus art — color tracks the active theme.
     let art = Paragraph::new(Text::from(cactus::small()))
-        .style(Style::default().fg(Color::White))
+        .style(Style::default().fg(app.theme.cactus))
         .alignment(Alignment::Center);
     frame.render_widget(art, chunks[1]);
 

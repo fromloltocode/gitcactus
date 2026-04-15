@@ -37,7 +37,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     .split(vert[0]);
 
     render_diff_panel(frame, cols[0], app);
-    render_side_panel(frame, cols[1]);
+    render_side_panel(frame, cols[1], app);
     render_footer(frame, vert[1], app);
 }
 
@@ -156,7 +156,7 @@ fn render_diff_panel(frame: &mut Frame, area: Rect, app: &App) {
 
 // ── Right panel: cactus + explanation ─────────────────────────────────
 
-fn render_side_panel(frame: &mut Frame, area: Rect) {
+fn render_side_panel(frame: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::vertical([
         Constraint::Length(1),  // padding
         Constraint::Length(10), // cactus
@@ -167,8 +167,9 @@ fn render_side_panel(frame: &mut Frame, area: Rect) {
     ])
     .split(area);
 
+    // Cactus art — color tracks the active theme.
     let art = Paragraph::new(Text::from(cactus::small()))
-        .style(Style::default().fg(Color::White))
+        .style(Style::default().fg(app.theme.cactus))
         .alignment(Alignment::Center);
     frame.render_widget(art, chunks[1]);
 

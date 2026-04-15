@@ -23,7 +23,7 @@ pub fn draw(frame: &mut Frame, app: &App, repo_status: &RepoStatus) {
         Screen::Intro => intro::render(frame, area, app),
         Screen::Title => title::render(frame, area),
         Screen::Menu => menu::render(frame, area, app),
-        Screen::Status => status::render(frame, area, repo_status, &app.terms),
+        Screen::Status => status::render(frame, area, repo_status, &app.terms, &app.theme),
         Screen::Stage => stage::render(frame, area, app),
         Screen::Update => update::render(frame, area, app),
         Screen::Commit => commit::render(frame, area, app),
