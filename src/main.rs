@@ -341,6 +341,16 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
         Effect::SaveTermMode(mode) => {
             Settings::save_term_mode(mode);
         }
+        Effect::SaveThemePreset(preset) => {
+            Settings::save_theme_preset(preset);
+            // Reload so any `theme.*=` overrides the user may have in
+            // their settings file fold back in on top of the new preset.
+            // This keeps the optimistically-applied in-memory palette
+            // (preset.palette()) in sync with what the next launch
+            // would see.
+            let fresh = Settings::load();
+            app.theme = fresh.theme;
+        }
         Effect::LoadHistory => {
             app.history.result = git::history::load_history(".");
             app.history.cursor = 0;

@@ -74,26 +74,35 @@ terminology=beginner
 
 ## Themes
 
-GitCactus ships with a restrained default palette. Pick a different
-preset — or override individual color roles — in
-`~/.config/gitcactus/settings`:
+GitCactus ships with a small set of presets. Change the active theme
+from the **Settings** screen (main menu → Settings) — preset selection
+is in-app, no config-file editing needed:
+
+- **Default** — restrained grayscale with cyan accents
+- **Terminal Blue** — cool cyan/blue palette
+- **Matrix** — bright green-on-black
+- **Retro Danger** — red + yellow arcade palette
+
+Power users can still edit the settings file directly for per-role
+color overrides:
 
 ```ini
+# On Unix: ~/.config/gitcactus/settings
+# On Windows: %APPDATA%\gitcactus\settings
+
 # Preset picks the whole palette.
 theme=matrix        # or: default, terminal_blue, retro_danger
 
-# Per-role overrides sit on top of a preset.
+# Per-role overrides sit on top of whatever preset is active.
 theme.primary=blue
 theme.highlight=lightcyan
 ```
 
-Available roles: `primary`, `success`, `warning`, `error`, `muted`,
-`cactus`, `highlight`. Unknown presets and invalid color names fall
-back silently — the app never fails to start because of theme config.
-
-The in-app **Settings** screen shows the current preset and flags when
-overrides are active. In-app editing of theme colors is planned for a
-later pass.
+Overrides survive preset changes made from the Settings screen, and
+the in-app UI flags when any are active. Available roles: `primary`,
+`success`, `warning`, `error`, `muted`, `cactus`, `highlight`.
+Unknown presets and invalid color names fall back silently — the app
+never fails to start because of theme config.
 
 See [docs/theme.md](docs/theme.md) for the full reference.
 

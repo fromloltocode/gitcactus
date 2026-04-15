@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use crate::platform;
 use crate::terminology::TermMode;
-use crate::theme::Theme;
+use crate::theme::{Theme, ThemePreset};
 
 pub struct Settings {
     /// Skip the retro intro animation on startup.
@@ -97,6 +97,27 @@ impl Settings {
                 .map(|l| format!("{l}\n"))
                 .collect();
             let new = format!("{filtered}terminology={}\n", mode.as_str());
+            let _ = fs::write(&path, new);
+        }
+    }
+
+    /// Persist the selected theme preset to the settings file.
+    ///
+    /// Only the `theme=<preset>` line is replaced. Any `theme.*=` per-role
+    /// overrides the user may have hand-written are preserved so they
+    /// continue to apply on top of the new preset on the next load.
+    pub fn save_theme_preset(preset: ThemePreset) {
+        if let Some(path) = Self::config_path() {
+            if let Some(dir) = path.parent() {
+                let _ = fs::create_dir_all(dir);
+            }
+            let existing = fs::read_to_string(&path).unwrap_or_default();
+            let filtered: String = existing
+                .lines()
+                .filter(|l| !l.trim().starts_with("theme="))
+                .map(|l| format!("{l}\n"))
+                .collect();
+            let new = format!("{filtered}theme={}\n", preset.as_str());
             let _ = fs::write(&path, new);
         }
     }
