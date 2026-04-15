@@ -5,8 +5,52 @@ use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 use ratatui::Frame;
 
 use crate::app::{App, MENU_ITEMS};
+use crate::input::Action;
 use crate::mascot::cactus;
-use crate::screens::render_help_bar;
+use crate::mouse::{ClickAction, ClickTarget};
+use crate::screens::{help_bar_click_targets, render_help_bar};
+
+/// The keybindings shown in the menu's footer help bar. Shared between
+/// `render` (for display) and `click_targets` (for mouse hit-testing)
+/// so the two can never drift.
+const FOOTER_BINDINGS: &[(&str, &str)] = &[
+    ("\u{2191}/\u{2193}/j/k/w/s", "navigate"),
+    ("Enter", "select"),
+    ("q", "quit"),
+];
+
+/// Fully-computed menu geometry — returned by [`layout`] and consumed
+/// by both the renderer and the click-target builder.
+struct MenuLayout {
+    items_area: Rect,
+    footer_area: Rect,
+}
+
+fn layout(area: Rect) -> MenuLayout {
+    // Mirror the outer block's `.borders(ALL)` inset (1 cell on every
+    // side) so clicks line up with what the user sees.
+    let outer = Block::default().borders(Borders::ALL);
+    let inner = outer.inner(area);
+
+    let columns = Layout::horizontal([
+        Constraint::Length(22), // sidebar
+        Constraint::Min(30),    // main
+    ])
+    .split(inner);
+
+    let main = columns[1];
+    let chunks = Layout::vertical([
+        Constraint::Length(2), // header
+        Constraint::Min(1),    // menu items
+        Constraint::Length(2), // footer
+    ])
+    .split(main);
+
+    MenuLayout {
+        items_area: chunks[1],
+        footer_area: chunks[2],
+    }
+}
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let outer = Block::default()
@@ -95,9 +139,45 @@ fn render_menu(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(list, chunks[1]);
 
     // Footer keybind hints
-    render_help_bar(frame, chunks[2], &[
-        ("\u{2191}/\u{2193}/j/k/w/s", "navigate"),
-        ("Enter", "select"),
-        ("q", "quit"),
-    ]);
+    render_help_bar(frame, chunks[2], FOOTER_BINDINGS);
+}
+
+/// Click targets for the main menu.
+///
+/// Each visible menu row maps to a `SelectMenu(i)` — clicking a row
+/// moves the cursor there and fires Select, exactly as if the user
+/// had navigated with `j/k` and pressed Enter. The footer exposes
+/// Enter and q as clickable hints.
+pub fn click_targets(area: Rect, _app: &App) -> Vec<ClickTarget> {
+    let l = layout(area);
+    let mut out = Vec::with_capacity(MENU_ITEMS.len() + 2);
+
+    // One target per visible menu row. Rows are rendered one-per-line
+    // from the top of `items_area`, so the Nth row sits at y + N.
+    for i in 0..MENU_ITEMS.len() {
+        let y_offset = i as u16;
+        if y_offset >= l.items_area.height {
+            break;
+        }
+        out.push(ClickTarget {
+            rect: Rect {
+                x: l.items_area.x,
+                y: l.items_area.y.saturating_add(y_offset),
+                width: l.items_area.width,
+                height: 1,
+            },
+            action: ClickAction::SelectMenu(i),
+        });
+    }
+
+    // Footer: Enter / q are clickable, arrows are not.
+    out.extend(help_bar_click_targets(l.footer_area, FOOTER_BINDINGS, |k| {
+        match k {
+            "Enter" => Some(Action::Select),
+            "q" => Some(Action::Quit),
+            _ => None,
+        }
+    }));
+
+    out
 }

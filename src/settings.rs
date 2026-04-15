@@ -1,13 +1,15 @@
 //! Lightweight settings persistence.
 //!
-//! Stores user preferences in `~/.config/gitcactus/settings` as simple
-//! key=value lines. No serde dependency — just plain text.
+//! Stores user preferences in the platform config directory (see
+//! [`crate::platform::config_dir`]) as simple `key=value` lines.
+//! No serde dependency — just plain text.
 
 use std::fs;
 use std::path::PathBuf;
 
+use crate::platform;
 use crate::terminology::TermMode;
-use crate::theme::Theme;
+use crate::theme::{Theme, ThemePreset};
 
 pub struct Settings {
     /// Skip the retro intro animation on startup.
@@ -99,13 +101,28 @@ impl Settings {
         }
     }
 
+    /// Persist the selected theme preset to the settings file.
+    ///
+    /// Only the `theme=<preset>` line is replaced. Any `theme.*=` per-role
+    /// overrides the user may have hand-written are preserved so they
+    /// continue to apply on top of the new preset on the next load.
+    pub fn save_theme_preset(preset: ThemePreset) {
+        if let Some(path) = Self::config_path() {
+            if let Some(dir) = path.parent() {
+                let _ = fs::create_dir_all(dir);
+            }
+            let existing = fs::read_to_string(&path).unwrap_or_default();
+            let filtered: String = existing
+                .lines()
+                .filter(|l| !l.trim().starts_with("theme="))
+                .map(|l| format!("{l}\n"))
+                .collect();
+            let new = format!("{filtered}theme={}\n", preset.as_str());
+            let _ = fs::write(&path, new);
+        }
+    }
+
     fn config_path() -> Option<PathBuf> {
-        let home = std::env::var("HOME").ok()?;
-        Some(
-            PathBuf::from(home)
-                .join(".config")
-                .join("gitcactus")
-                .join("settings"),
-        )
+        platform::config_file("settings")
     }
 }

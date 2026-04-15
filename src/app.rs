@@ -37,6 +37,10 @@ pub enum Effect {
     IntroFinished,
     /// Persist the selected terminology mode to the settings file.
     SaveTermMode(crate::terminology::TermMode),
+    /// Persist the selected theme preset to the settings file and
+    /// reload the full theme so any existing `theme.*=` overrides
+    /// still apply on top.
+    SaveThemePreset(crate::theme::ThemePreset),
     /// Load commit history (read-only).
     LoadHistory,
     /// Load the branch list (read-only).
@@ -937,22 +941,49 @@ pub const SETTINGS_TERM_MODES: &[crate::terminology::TermMode] = &[
     crate::terminology::TermMode::Git,
 ];
 
+/// The theme presets available for selection, in display order.
+pub const SETTINGS_THEME_PRESETS: &[crate::theme::ThemePreset] = &[
+    crate::theme::ThemePreset::Default,
+    crate::theme::ThemePreset::TerminalBlue,
+    crate::theme::ThemePreset::Matrix,
+    crate::theme::ThemePreset::RetroDanger,
+];
+
+/// What kind of setting the cursor is currently pointing at.
+///
+/// A flat cursor walks the concatenation of terminology modes then
+/// theme presets; [`SettingsState::selection`] translates the cursor
+/// position into this enum so the handler doesn't need to know the
+/// underlying index math.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsSelection {
+    TermMode(crate::terminology::TermMode),
+    Theme(crate::theme::ThemePreset),
+}
+
 /// State for the Settings screen.
 pub struct SettingsState {
-    /// Currently highlighted mode index.
+    /// Unified cursor across all setting rows (terminology then theme).
     pub cursor: usize,
 }
 
 impl Default for SettingsState {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SettingsState {
+    /// Total number of rows the cursor can occupy.
+    pub const fn total_rows() -> usize {
+        SETTINGS_TERM_MODES.len() + SETTINGS_THEME_PRESETS.len()
+    }
+
     pub fn new() -> Self {
         Self { cursor: 0 }
     }
 
-    /// Initialize cursor to match the currently active mode.
+    /// Initialize cursor to match the currently active terminology mode.
     pub fn from_active(mode: crate::terminology::TermMode) -> Self {
         let cursor = SETTINGS_TERM_MODES
             .iter()
@@ -968,14 +999,20 @@ impl SettingsState {
     }
 
     pub fn move_down(&mut self) {
-        if self.cursor < SETTINGS_TERM_MODES.len() - 1 {
+        if self.cursor + 1 < Self::total_rows() {
             self.cursor += 1;
         }
     }
 
-    /// Return the mode at the current cursor position.
-    pub fn selected_mode(&self) -> crate::terminology::TermMode {
-        SETTINGS_TERM_MODES[self.cursor]
+    /// Return what the cursor is currently pointing at.
+    pub fn selection(&self) -> SettingsSelection {
+        let term_count = SETTINGS_TERM_MODES.len();
+        if self.cursor < term_count {
+            SettingsSelection::TermMode(SETTINGS_TERM_MODES[self.cursor])
+        } else {
+            let theme_idx = (self.cursor - term_count).min(SETTINGS_THEME_PRESETS.len() - 1);
+            SettingsSelection::Theme(SETTINGS_THEME_PRESETS[theme_idx])
+        }
     }
 }
 
@@ -1207,6 +1244,42 @@ impl App {
     /// This is the single place where user intent meets application state.
     /// The event loop is responsible for carrying out any returned effect
     /// (I/O, git operations, etc.) and feeding the results back in.
+    ///
+    /// Translate a mouse [`ClickAction`](crate::mouse::ClickAction)
+    /// into the equivalent keyboard flow.
+    ///
+    /// For list-row clicks we set the corresponding screen's cursor
+    /// first (clamped to the current list length) and then dispatch
+    /// the same [`Action`] a keyboard user would press. For plain
+    /// footer / dialog button clicks we dispatch the action directly.
+    /// Either way, the resulting [`Effect`] flows through the same
+    /// handler as a keyboard event — clicks never bypass confirm
+    /// dialogs, never invent new semantics, and never touch Git
+    /// state outside of what `handle_action` already allows.
+    pub fn handle_click_action(&mut self, ca: crate::mouse::ClickAction) -> Effect {
+        use crate::mouse::ClickAction as CA;
+        match ca {
+            CA::Fire(a) => self.handle_action(a),
+            CA::SelectMenu(i) => {
+                let max = MENU_ITEMS.len().saturating_sub(1);
+                self.menu_index = i.min(max);
+                self.handle_action(Action::Select)
+            }
+            CA::SelectSettings(i) => {
+                let max = SettingsState::total_rows().saturating_sub(1);
+                self.settings_state.cursor = i.min(max);
+                self.handle_action(Action::Select)
+            }
+            CA::ToggleStage(i) => {
+                if i >= self.stage.entries.len() {
+                    return Effect::None;
+                }
+                self.stage.cursor = i;
+                self.handle_action(Action::Toggle)
+            }
+        }
+    }
+
     pub fn handle_action(&mut self, action: Action) -> Effect {
         // When an overlay animation is active, any key press is the
         // skip / dismiss gesture. We intercept here so animations are
@@ -1780,11 +1853,21 @@ impl App {
                     self.settings_state.move_down();
                     Effect::None
                 }
-                Action::Select => {
-                    let mode = self.settings_state.selected_mode();
-                    self.terms = Terms::new(mode);
-                    Effect::SaveTermMode(mode)
-                }
+                Action::Select => match self.settings_state.selection() {
+                    SettingsSelection::TermMode(mode) => {
+                        self.terms = Terms::new(mode);
+                        Effect::SaveTermMode(mode)
+                    }
+                    SettingsSelection::Theme(preset) => {
+                        // Apply the bare preset optimistically so the
+                        // UI refreshes immediately. The effect handler
+                        // will re-read the settings file afterwards so
+                        // any hand-written `theme.*=` overrides fold
+                        // back in.
+                        self.theme = preset.palette();
+                        Effect::SaveThemePreset(preset)
+                    }
+                },
                 _ => Effect::None,
             },
 

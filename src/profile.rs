@@ -1,7 +1,8 @@
 //! Local-first progression profile.
 //!
-//! Persisted as plain key=value text at `~/.config/gitcactus/profile`.
-//! Kept separate from `settings` because it is gameplay data, not user
+//! Persisted as plain key=value text in the platform config directory
+//! (see [`crate::platform::config_dir`]). Kept separate from
+//! `settings` because it is gameplay data, not user
 //! preferences, and so the two files can be backed up / wiped / reset
 //! independently.
 //!
@@ -18,6 +19,8 @@
 
 use std::fs;
 use std::path::PathBuf;
+
+use crate::platform;
 
 /// Profile file format version. Increment if the stored shape changes
 /// in a way old loaders cannot tolerate.
@@ -170,13 +173,7 @@ impl Profile {
     }
 
     fn profile_path() -> Option<PathBuf> {
-        let home = std::env::var("HOME").ok()?;
-        Some(
-            PathBuf::from(home)
-                .join(".config")
-                .join("gitcactus")
-                .join("profile"),
-        )
+        platform::config_file("profile")
     }
 }
 

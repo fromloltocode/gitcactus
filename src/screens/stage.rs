@@ -5,8 +5,10 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::app::{App, StageFileKind, StageMode};
+use crate::input::Action;
 use crate::mascot::cactus;
-use crate::screens::render_help_bar;
+use crate::mouse::{ClickAction, ClickTarget};
+use crate::screens::{help_bar_click_targets, render_help_bar};
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let outer = Block::default()
@@ -304,6 +306,153 @@ fn render_result_dialog(frame: &mut Frame, area: Rect, app: &App) {
         )),
     ]));
     frame.render_widget(text, inner);
+}
+
+// ── Mouse click targets ──────────────────────────────────────────────
+
+/// Click targets for the Stage screen.
+///
+/// In Browse mode:
+///   - Each visible stageable row toggles its checkbox (same as Space).
+///   - Footer hints (Space, a, r, Enter, Esc, q) are clickable.
+///
+/// In Confirm mode:
+///   - Only the dialog's "confirm" and "cancel" regions are clickable,
+///     and they fire `Confirm` / `Deny` — the same actions keyboard
+///     users trigger with y / n. Click never bypasses the dialog.
+///
+/// In Result mode:
+///   - Any click dismisses the result (same as any key).
+pub fn click_targets(area: Rect, app: &App) -> Vec<ClickTarget> {
+    let mut out = Vec::new();
+
+    // ── Underlying screen targets (Browse-mode geometry) ──
+    //
+    // The outer block's 1-cell border inset plus the body/footer
+    // vertical split. Confirm/Result overlays sit on top and will
+    // win the hit-test because they're pushed last.
+    let outer = Block::default().borders(Borders::ALL);
+    let inner = outer.inner(area);
+    let vert = Layout::vertical([Constraint::Min(1), Constraint::Length(2)]).split(inner);
+    let cols = Layout::horizontal([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .split(vert[0]);
+    let file_panel = cols[0];
+    let footer_area = vert[1];
+    let file_inner = Block::default().borders(Borders::RIGHT).inner(file_panel);
+
+    if app.stage.mode == StageMode::Browse {
+        // Figure out which line each stageable entry lives on. The
+        // file panel renders an optional "Already Staged" section
+        // first, then a two-line header ("Select files to stage" +
+        // blank), then one line per entry. We mirror that math here
+        // so clicks land on the right entry.
+        let mut y = 0u16;
+        if !app.stage.already_staged.is_empty() {
+            // 1 header + min(entries, 10) rows + optional "… and N more"
+            // + blank separator.
+            y += 1;
+            let shown = app.stage.already_staged.len().min(10) as u16;
+            y += shown;
+            if app.stage.already_staged.len() > 10 {
+                y += 1;
+            }
+            y += 1;
+        }
+        // "Select files to stage" header + blank line.
+        y += 2;
+
+        for i in 0..app.stage.entries.len() {
+            if y >= file_inner.height {
+                break;
+            }
+            out.push(ClickTarget {
+                rect: Rect {
+                    x: file_inner.x,
+                    y: file_inner.y.saturating_add(y),
+                    width: file_inner.width,
+                    height: 1,
+                },
+                action: ClickAction::ToggleStage(i),
+            });
+            y += 1;
+        }
+
+        // Footer hints (only the ones that fire a clean semantic Action).
+        let selected = app.stage.selected_count();
+        let stage_label: String;
+        let mut bindings: Vec<(&str, &str)> = vec![
+            ("\u{2191}/\u{2193}/w/s", "move"),
+            ("Space", "toggle"),
+            ("d", "diff"),
+            ("o", "open"),
+            ("a", "all"),
+            ("r", "refresh"),
+        ];
+        if selected > 0 {
+            stage_label = format!("stage ({selected})");
+            bindings.push(("Enter", &stage_label));
+        }
+        bindings.push(("Esc", "back"));
+        bindings.push(("q", "quit"));
+
+        out.extend(help_bar_click_targets(footer_area, &bindings, |k| match k {
+            "Enter" => Some(Action::Select),
+            "Esc" => Some(Action::Back),
+            "q" => Some(Action::Quit),
+            "r" => Some(Action::Refresh),
+            "a" => Some(Action::ToggleAll),
+            _ => None,
+        }));
+    }
+
+    // ── Confirm-dialog overlay ──
+    //
+    // The dialog is rendered by `render_confirm_dialog` at
+    // `centered_rect(50, 9, area)`. The "y/Enter confirm" / "n/Esc
+    // cancel" line sits at line 7 inside the inner rect (after title
+    // border + 6 leading lines). Split that line left/right.
+    if app.stage.mode == StageMode::Confirm {
+        let dialog = centered_rect(50, 9, area);
+        let inner_dialog = Block::default().borders(Borders::ALL).inner(dialog);
+        // The confirm/cancel line is the 7th inner row (index 6).
+        let button_y = inner_dialog.y.saturating_add(6);
+        if button_y < inner_dialog.y.saturating_add(inner_dialog.height) {
+            let half = inner_dialog.width / 2;
+            out.push(ClickTarget {
+                rect: Rect {
+                    x: inner_dialog.x,
+                    y: button_y,
+                    width: half,
+                    height: 1,
+                },
+                action: ClickAction::Fire(Action::Confirm),
+            });
+            out.push(ClickTarget {
+                rect: Rect {
+                    x: inner_dialog.x.saturating_add(half),
+                    y: button_y,
+                    width: inner_dialog.width.saturating_sub(half),
+                    height: 1,
+                },
+                action: ClickAction::Fire(Action::Deny),
+            });
+        }
+    }
+
+    // ── Result-dialog overlay ──
+    //
+    // Any click inside the result dialog dismisses it — mapped to
+    // Action::Select, which matches the "press any key to continue"
+    // keyboard behaviour.
+    if app.stage.mode == StageMode::Result {
+        let dialog = centered_rect(50, 7, area);
+        out.push(ClickTarget {
+            rect: dialog,
+            action: ClickAction::Fire(Action::Select),
+        });
+    }
+
+    out
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────

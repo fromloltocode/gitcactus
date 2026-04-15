@@ -26,7 +26,10 @@ GitCactus aims to be the middle ground:
 - **Teaches Git** — the Hybrid terminology mode shows "Checkpoint (Commit)" so beginners learn the real words over time rather than being walled off from them.
 - **Searchable** — press `/` to filter history and branches instantly.
 - **Editor-friendly** — press `o` to open the selected file in `$EDITOR`.
-- **Keyboard-first** — arrow keys, Vim-style (`j/k`), and WASD all work everywhere.
+- **Keyboard-first, mouse-friendly** — arrow keys, Vim-style (`j/k`), and WASD
+  all work everywhere; menu items, settings rows, confirmation buttons, and
+  the footer `Esc`/`q`/`Enter` hints are also clickable on terminals that
+  support mouse events.
 
 ## Status
 
@@ -35,7 +38,8 @@ GitCactus aims to be the middle ground:
 ## Features
 
 - Retro 80s/90s-style intro animation (skippable, remembered in settings)
-- Keyboard-navigable main menu (arrow keys, j/k/w/s, Enter)
+- Keyboard-navigable main menu (arrow keys, j/k/w/s, Enter) with mouse
+  support for clickable menu items and footer controls
 - Live git status view with branch + grouped file lists
 - Interactive staging with file selection and confirmation
 - Guided commit flow with inline message input
@@ -74,26 +78,35 @@ terminology=beginner
 
 ## Themes
 
-GitCactus ships with a restrained default palette. Pick a different
-preset — or override individual color roles — in
-`~/.config/gitcactus/settings`:
+GitCactus ships with a small set of presets. Change the active theme
+from the **Settings** screen (main menu → Settings) — preset selection
+is in-app, no config-file editing needed:
+
+- **Default** — restrained grayscale with cyan accents
+- **Terminal Blue** — cool cyan/blue palette
+- **Matrix** — bright green-on-black
+- **Retro Danger** — red + yellow arcade palette
+
+Power users can still edit the settings file directly for per-role
+color overrides:
 
 ```ini
+# On Unix: ~/.config/gitcactus/settings
+# On Windows: %APPDATA%\gitcactus\settings
+
 # Preset picks the whole palette.
 theme=matrix        # or: default, terminal_blue, retro_danger
 
-# Per-role overrides sit on top of a preset.
+# Per-role overrides sit on top of whatever preset is active.
 theme.primary=blue
 theme.highlight=lightcyan
 ```
 
-Available roles: `primary`, `success`, `warning`, `error`, `muted`,
-`cactus`, `highlight`. Unknown presets and invalid color names fall
-back silently — the app never fails to start because of theme config.
-
-The in-app **Settings** screen shows the current preset and flags when
-overrides are active. In-app editing of theme colors is planned for a
-later pass.
+Overrides survive preset changes made from the Settings screen, and
+the in-app UI flags when any are active. Available roles: `primary`,
+`success`, `warning`, `error`, `muted`, `cactus`, `highlight`.
+Unknown presets and invalid color names fall back silently — the app
+never fails to start because of theme config.
 
 See [docs/theme.md](docs/theme.md) for the full reference.
 
@@ -144,28 +157,37 @@ brew upgrade gitcactus
 > command collapses to `brew install gitcactus`. For now the custom tap
 > keeps release cadence flexible.
 
-### Prebuilt binaries (planned)
+### Prebuilt binaries
 
-Tagged releases on GitHub will include prebuilt binaries for:
+Tagged releases on GitHub include prebuilt binaries for:
 
-- macOS (`x86_64`, `aarch64`)
-- Linux (`x86_64`)
+- macOS (`x86_64`, `aarch64`) — `.tar.gz`
+- Linux (`x86_64`) — `.tar.gz`
+- Windows (`x86_64`) — `.zip` (run from PowerShell / Windows Terminal;
+  needs [Git for Windows](https://git-scm.com/download/win) on PATH)
 
-Download from the [Releases page](https://github.com/fromloltocode/gitcactus/releases), extract, and move `gitcactus` into your `PATH`.
+Download from the [Releases page](https://github.com/fromloltocode/gitcactus/releases), extract, and move `gitcactus` (or `gitcactus.exe` on Windows) into your `PATH`.
+
+On Windows, configuration lives in `%APPDATA%\gitcactus\` (typically
+`C:\Users\<you>\AppData\Roaming\gitcactus\`) instead of `~/.config/gitcactus/`.
 
 ### Build from source
 
 Prerequisites:
 
 - [Rust](https://rustup.rs/) (1.70+)
-- A C compiler (for `libgit2` — usually already installed on macOS/Linux)
+- A C compiler (for `libgit2`):
+  - macOS / Linux: usually already installed
+  - Windows: [Build Tools for Visual Studio](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022)
+    (selects MSVC + Windows SDK) plus [Git for Windows](https://git-scm.com/download/win)
 - [just](https://github.com/casey/just) (optional, for dev task runner)
 
 ```bash
 git clone https://github.com/fromloltocode/gitcactus.git
 cd gitcactus
 cargo build --release
-./target/release/gitcactus
+./target/release/gitcactus            # macOS / Linux
+.\target\release\gitcactus.exe        # Windows (PowerShell)
 ```
 
 Or for development: `cargo run`.
