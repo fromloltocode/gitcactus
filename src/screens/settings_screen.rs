@@ -204,7 +204,10 @@ fn render_side_panel(frame: &mut Frame, area: Rect, app: &App) {
             ),
         ]),
         Line::from(Span::styled(
-            " edit via ~/.config/gitcactus/settings",
+            format!(
+                " edit via {}",
+                crate::platform::config_dir_display("settings")
+            ),
             Style::default().fg(app.theme.muted),
         )),
     ]))

@@ -3,6 +3,7 @@ mod editor;
 mod git;
 mod input;
 mod mascot;
+mod platform;
 #[allow(dead_code)]
 mod profile;
 #[allow(dead_code)]
@@ -35,7 +36,14 @@ use git::status::read_status;
 use input::{map_key, map_key_text};
 use settings::Settings;
 
-const HELP_TEXT: &str = "\
+/// Build the `--help` text. Some paths and editor names differ between
+/// Windows and Unix, so it's computed at call time from
+/// [`platform`] helpers rather than a single `const`.
+fn help_text() -> String {
+    let settings_path = platform::config_dir_display("settings");
+    let editors = platform::default_editor_candidates().join(", ");
+    format!(
+        "\
 GitCactus — a retro-inspired terminal Git assistant.
 
 USAGE:
@@ -49,10 +57,10 @@ FLAGS:
 
 ENVIRONMENT:
     EDITOR             Editor used by the \"Open in Editor\" action.
-                       Falls back to nvim, vim, vi, nano, code, emacs.
+                       Falls back to: {editors}.
 
 SETTINGS:
-    ~/.config/gitcactus/settings
+    {settings_path}
                        Plain-text key=value file. Supported keys:
                          skip_intro=true
                          terminology=beginner|hybrid|git
@@ -60,12 +68,14 @@ SETTINGS:
 
 Run gitcactus inside any git repository to explore and manage it
 through a terminal UI. See https://github.com/fromloltocode/gitcactus
-";
+"
+    )
+}
 
 fn main() -> io::Result<()> {
     // Handle --help flag before entering TUI mode.
     if std::env::args().any(|a| a == "--help" || a == "-h") {
-        print!("{HELP_TEXT}");
+        print!("{}", help_text());
         return Ok(());
     }
     // Handle --version flag before entering TUI mode.

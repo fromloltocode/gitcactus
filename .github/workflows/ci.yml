@@ -11,8 +11,12 @@ env:
 
 jobs:
   test:
-    name: test / clippy
-    runs-on: ubuntu-latest
+    name: test / clippy (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -23,6 +27,8 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
 
       - name: cargo clippy
         run: cargo clippy --all-targets --workspace -- -D warnings
@@ -30,8 +36,17 @@ jobs:
       - name: cargo test
         run: cargo test --workspace
 
-      - name: Smoke-test --version and --help
+      - name: Smoke-test --version and --help (Unix)
+        if: runner.os != 'Windows'
         run: |
           cargo build --release
           ./target/release/gitcactus --version
           ./target/release/gitcactus --help
+
+      - name: Smoke-test --version and --help (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo build --release
+          ./target/release/gitcactus.exe --version
+          ./target/release/gitcactus.exe --help

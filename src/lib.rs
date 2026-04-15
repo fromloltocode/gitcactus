@@ -3,6 +3,7 @@ pub mod editor;
 pub mod git;
 pub mod input;
 pub mod mascot;
+pub mod platform;
 pub mod profile;
 pub mod progression;
 pub mod screens;

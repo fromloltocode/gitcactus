@@ -2,8 +2,11 @@
 //!
 //! Resolution order:
 //!   1. `$EDITOR` environment variable (may include arguments)
-//!   2. Fallback to common editors found on `PATH`:
-//!      `nvim`, `vim`, `vi`, `nano`, `code`, `emacs`
+//!   2. Fallback to common editors found on `PATH`. The list is
+//!      platform-specific — see
+//!      [`crate::platform::default_editor_candidates`]:
+//!      - Unix: `nvim`, `vim`, `vi`, `nano`, `code`, `emacs`
+//!      - Windows: `code`, `nvim`, `vim`, `notepad`
 //!
 //! Execution is blocking — the caller is expected to suspend the TUI
 //! before invoking `open_in_editor` and restore it afterwards so the
@@ -11,6 +14,8 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use crate::platform;
 
 /// Result of an "open in editor" attempt.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,9 +32,6 @@ pub enum EditorResult {
     LaunchFailed(String),
 }
 
-/// Candidate editors we search for when $EDITOR is not set.
-const FALLBACK_EDITORS: &[&str] = &["nvim", "vim", "vi", "nano", "code", "emacs"];
-
 /// Find the editor command to use, or `None` if nothing is available.
 ///
 /// Returns the raw command string — may contain spaces (e.g. `"code --wait"`).
@@ -40,24 +42,46 @@ pub fn find_editor() -> Option<String> {
             return Some(trimmed.to_string());
         }
     }
-    for candidate in FALLBACK_EDITORS {
+    for candidate in platform::default_editor_candidates() {
         if is_on_path(candidate) {
-            return Some(candidate.to_string());
+            return Some((*candidate).to_string());
         }
     }
     None
 }
 
 /// Check whether a binary exists on `$PATH`.
+///
+/// On Windows, also tries common executable extensions
+/// (`.exe`, `.cmd`, `.bat`) when `name` has no extension. This matches
+/// what the OS loader does when the user runs a bare name like
+/// `notepad` rather than `notepad.exe`.
 fn is_on_path(name: &str) -> bool {
-    std::env::var_os("PATH")
-        .map(|path| {
-            std::env::split_paths(&path).any(|dir| {
-                let full = dir.join(name);
-                full.exists() && full.is_file()
-            })
+    let path = match std::env::var_os("PATH") {
+        Some(p) => p,
+        None => return false,
+    };
+
+    #[cfg(windows)]
+    let candidates: Vec<String> = {
+        if std::path::Path::new(name).extension().is_some() {
+            vec![name.to_string()]
+        } else {
+            ["", ".exe", ".cmd", ".bat"]
+                .iter()
+                .map(|ext| format!("{name}{ext}"))
+                .collect()
+        }
+    };
+    #[cfg(not(windows))]
+    let candidates: Vec<String> = vec![name.to_string()];
+
+    std::env::split_paths(&path).any(|dir| {
+        candidates.iter().any(|c| {
+            let full = dir.join(c);
+            full.exists() && full.is_file()
         })
-        .unwrap_or(false)
+    })
 }
 
 /// Open `file_path` in the user's editor. Blocking — run after the TUI
@@ -132,7 +156,7 @@ pub fn result_message(r: &EditorResult) -> (String, bool) {
         EditorResult::Ok => ("Returned from editor.".into(), true),
         EditorResult::FileNotFound(p) => (format!("File not found: {p}"), false),
         EditorResult::NoEditor => (
-            "No editor found. Set $EDITOR or install nvim/vim/nano/code.".into(),
+            format!("No editor found. {}", platform::editor_suggestion()),
             false,
         ),
         EditorResult::BinaryFile(p) => (

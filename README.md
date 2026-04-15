@@ -144,28 +144,37 @@ brew upgrade gitcactus
 > command collapses to `brew install gitcactus`. For now the custom tap
 > keeps release cadence flexible.
 
-### Prebuilt binaries (planned)
+### Prebuilt binaries
 
-Tagged releases on GitHub will include prebuilt binaries for:
+Tagged releases on GitHub include prebuilt binaries for:
 
-- macOS (`x86_64`, `aarch64`)
-- Linux (`x86_64`)
+- macOS (`x86_64`, `aarch64`) — `.tar.gz`
+- Linux (`x86_64`) — `.tar.gz`
+- Windows (`x86_64`) — `.zip` (run from PowerShell / Windows Terminal;
+  needs [Git for Windows](https://git-scm.com/download/win) on PATH)
 
-Download from the [Releases page](https://github.com/fromloltocode/gitcactus/releases), extract, and move `gitcactus` into your `PATH`.
+Download from the [Releases page](https://github.com/fromloltocode/gitcactus/releases), extract, and move `gitcactus` (or `gitcactus.exe` on Windows) into your `PATH`.
+
+On Windows, configuration lives in `%APPDATA%\gitcactus\` (typically
+`C:\Users\<you>\AppData\Roaming\gitcactus\`) instead of `~/.config/gitcactus/`.
 
 ### Build from source
 
 Prerequisites:
 
 - [Rust](https://rustup.rs/) (1.70+)
-- A C compiler (for `libgit2` — usually already installed on macOS/Linux)
+- A C compiler (for `libgit2`):
+  - macOS / Linux: usually already installed
+  - Windows: [Build Tools for Visual Studio](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022)
+    (selects MSVC + Windows SDK) plus [Git for Windows](https://git-scm.com/download/win)
 - [just](https://github.com/casey/just) (optional, for dev task runner)
 
 ```bash
 git clone https://github.com/fromloltocode/gitcactus.git
 cd gitcactus
 cargo build --release
-./target/release/gitcactus
+./target/release/gitcactus            # macOS / Linux
+.\target\release\gitcactus.exe        # Windows (PowerShell)
 ```
 
 Or for development: `cargo run`.

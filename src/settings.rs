@@ -1,11 +1,13 @@
 //! Lightweight settings persistence.
 //!
-//! Stores user preferences in `~/.config/gitcactus/settings` as simple
-//! key=value lines. No serde dependency — just plain text.
+//! Stores user preferences in the platform config directory (see
+//! [`crate::platform::config_dir`]) as simple `key=value` lines.
+//! No serde dependency — just plain text.
 
 use std::fs;
 use std::path::PathBuf;
 
+use crate::platform;
 use crate::terminology::TermMode;
 use crate::theme::Theme;
 
@@ -100,12 +102,6 @@ impl Settings {
     }
 
     fn config_path() -> Option<PathBuf> {
-        let home = std::env::var("HOME").ok()?;
-        Some(
-            PathBuf::from(home)
-                .join(".config")
-                .join("gitcactus")
-                .join("settings"),
-        )
+        platform::config_file("settings")
     }
 }
