@@ -1244,6 +1244,42 @@ impl App {
     /// This is the single place where user intent meets application state.
     /// The event loop is responsible for carrying out any returned effect
     /// (I/O, git operations, etc.) and feeding the results back in.
+    ///
+    /// Translate a mouse [`ClickAction`](crate::mouse::ClickAction)
+    /// into the equivalent keyboard flow.
+    ///
+    /// For list-row clicks we set the corresponding screen's cursor
+    /// first (clamped to the current list length) and then dispatch
+    /// the same [`Action`] a keyboard user would press. For plain
+    /// footer / dialog button clicks we dispatch the action directly.
+    /// Either way, the resulting [`Effect`] flows through the same
+    /// handler as a keyboard event — clicks never bypass confirm
+    /// dialogs, never invent new semantics, and never touch Git
+    /// state outside of what `handle_action` already allows.
+    pub fn handle_click_action(&mut self, ca: crate::mouse::ClickAction) -> Effect {
+        use crate::mouse::ClickAction as CA;
+        match ca {
+            CA::Fire(a) => self.handle_action(a),
+            CA::SelectMenu(i) => {
+                let max = MENU_ITEMS.len().saturating_sub(1);
+                self.menu_index = i.min(max);
+                self.handle_action(Action::Select)
+            }
+            CA::SelectSettings(i) => {
+                let max = SettingsState::total_rows().saturating_sub(1);
+                self.settings_state.cursor = i.min(max);
+                self.handle_action(Action::Select)
+            }
+            CA::ToggleStage(i) => {
+                if i >= self.stage.entries.len() {
+                    return Effect::None;
+                }
+                self.stage.cursor = i;
+                self.handle_action(Action::Toggle)
+            }
+        }
+    }
+
     pub fn handle_action(&mut self, action: Action) -> Effect {
         // When an overlay animation is active, any key press is the
         // skip / dismiss gesture. We intercept here so animations are

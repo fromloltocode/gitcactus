@@ -10,6 +10,7 @@ use ratatui::Frame;
 
 use crate::app::{App, Screen};
 use crate::git::status::RepoStatus;
+use crate::mouse::ClickTarget;
 use crate::screens::{
     branches, commit, commit_details, diff, help, history, intro, menu, rebase_execute,
     rebase_portal, remote_sync, settings_screen, skill_tree, stage, status, title, update,
@@ -155,4 +156,34 @@ fn render_editor_banner(frame: &mut Frame, area: Rect, msg: &str, is_ok: bool) {
             .add_modifier(Modifier::BOLD),
     )));
     frame.render_widget(text, inner);
+}
+
+/// Compute the set of clickable rectangles for the active screen.
+///
+/// Called by the main loop on every mouse-down event; returns the
+/// list that [`crate::mouse::resolve_click`] then hit-tests against.
+/// Screens that haven't opted in return an empty vec — mouse input is
+/// then silently ignored on those screens and keyboard behaviour is
+/// unaffected.
+///
+/// An overlay animation, if active, grabs every click (maps to
+/// Select, matching the "any key dismisses" keyboard semantics), so
+/// mouse and keyboard stay symmetric.
+pub fn click_targets(area: Rect, app: &App) -> Vec<ClickTarget> {
+    use crate::input::Action;
+    use crate::mouse::ClickAction;
+
+    if app.animation.is_some() {
+        return vec![ClickTarget {
+            rect: area,
+            action: ClickAction::Fire(Action::Select),
+        }];
+    }
+
+    match app.screen {
+        Screen::Menu => menu::click_targets(area, app),
+        Screen::Settings => settings_screen::click_targets(area, app),
+        Screen::Stage => stage::click_targets(area, app),
+        _ => Vec::new(),
+    }
 }

@@ -15,10 +15,20 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::app::{App, SettingsSelection, SETTINGS_THEME_PRESETS, SETTINGS_TERM_MODES};
+use crate::input::Action;
 use crate::mascot::cactus;
-use crate::screens::render_help_bar;
+use crate::mouse::{ClickAction, ClickTarget};
+use crate::screens::{help_bar_click_targets, render_help_bar};
 use crate::terminology::TermMode;
 use crate::theme::ThemePreset;
+
+/// Footer bindings shared between render and click-target computation.
+const FOOTER_BINDINGS: &[(&str, &str)] = &[
+    ("\u{2191}/\u{2193}/w/s", "move"),
+    ("Enter", "apply"),
+    ("Esc", "back"),
+    ("q", "quit"),
+];
 
 /// Terminology mode descriptions.
 const MODE_DESCRIPTIONS: &[&str] = &[
@@ -257,14 +267,110 @@ fn render_side_panel(frame: &mut Frame, area: Rect, app: &App) {
 // ── Footer ───────────────────────────────────────────────────────────
 
 fn render_footer(frame: &mut Frame, area: Rect) {
-    render_help_bar(
-        frame,
-        area,
-        &[
-            ("\u{2191}/\u{2193}/w/s", "move"),
-            ("Enter", "apply"),
-            ("Esc", "back"),
-            ("q", "quit"),
-        ],
-    );
+    render_help_bar(frame, area, FOOTER_BINDINGS);
+}
+
+// ── Mouse click targets ──────────────────────────────────────────────
+
+/// Recompute the main panel's geometry to match the render path.
+/// Kept in sync manually with [`render`] — the layout is trivial and
+/// stable enough that a shared helper would add more noise than it saves.
+fn layout(area: Rect) -> (Rect, Rect) {
+    let outer = Block::default().borders(Borders::ALL);
+    let inner = outer.inner(area);
+    let vert = Layout::vertical([Constraint::Min(1), Constraint::Length(2)]).split(inner);
+    let cols = Layout::horizontal([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .split(vert[0]);
+    let main_panel = cols[0];
+
+    // Match the `Borders::RIGHT` inset inside the main panel.
+    let main_inner = Block::default().borders(Borders::RIGHT).inner(main_panel);
+    (main_inner, vert[1])
+}
+
+/// Count the vertical offset inside the main panel used by each row
+/// emitted by [`render_main_panel`]. Mirrored here so mouse hit
+/// regions sit on the same lines as the rendered text.
+fn row_line_counts() -> (Vec<u16>, Vec<u16>, u16, u16) {
+    // Header rows before the terminology options:
+    //   [title, subtitle, blank] = 3 lines
+    let term_header = 3u16;
+    // Theme header: [title, subtitle, optional override-hint, blank]
+    // We can't know at layout time whether overrides are active, but
+    // the click math only needs the worst-case offset — callers that
+    // need precision compute it from `app.theme.has_overrides()`.
+    let theme_header_base = 3u16;
+
+    // Each option row occupies 3 display lines (row + description + blank).
+    let term_rows: Vec<u16> = (0..SETTINGS_TERM_MODES.len())
+        .map(|i| term_header + (i as u16) * 3)
+        .collect();
+    // After the terminology section: its block of rows (3 lines each)
+    // + 1 blank line separator before the theme header.
+    let theme_rows_start = term_header
+        + SETTINGS_TERM_MODES.len() as u16 * 3
+        + 1
+        + theme_header_base;
+
+    let theme_rows: Vec<u16> = (0..SETTINGS_THEME_PRESETS.len())
+        .map(|i| theme_rows_start + (i as u16) * 3)
+        .collect();
+
+    (term_rows, theme_rows, term_header, theme_header_base)
+}
+
+pub fn click_targets(area: Rect, app: &App) -> Vec<ClickTarget> {
+    let (main_inner, footer) = layout(area);
+    let (term_rows, theme_rows, _term_header, _theme_header) = row_line_counts();
+
+    // If overrides are active, everything in the theme section shifts
+    // down by one line to accommodate the extra warning row.
+    let theme_shift: u16 = if app.theme.has_overrides() { 1 } else { 0 };
+
+    let mut out = Vec::new();
+
+    // Terminology section rows.
+    for (i, &y_off) in term_rows.iter().enumerate() {
+        let row_index = i; // cursor index
+        if y_off >= main_inner.height {
+            break;
+        }
+        out.push(ClickTarget {
+            rect: Rect {
+                x: main_inner.x,
+                y: main_inner.y.saturating_add(y_off),
+                width: main_inner.width,
+                height: 1,
+            },
+            action: ClickAction::SelectSettings(row_index),
+        });
+    }
+
+    // Theme section rows.
+    for (i, &y_off) in theme_rows.iter().enumerate() {
+        let row_index = SETTINGS_TERM_MODES.len() + i;
+        let y_off = y_off + theme_shift;
+        if y_off >= main_inner.height {
+            break;
+        }
+        out.push(ClickTarget {
+            rect: Rect {
+                x: main_inner.x,
+                y: main_inner.y.saturating_add(y_off),
+                width: main_inner.width,
+                height: 1,
+            },
+            action: ClickAction::SelectSettings(row_index),
+        });
+    }
+
+    // Footer: Enter/Esc/q clickable; arrow hint is not.
+    out.extend(help_bar_click_targets(footer, FOOTER_BINDINGS, |k| match k {
+        "Enter" => Some(Action::Select),
+        "Esc" => Some(Action::Back),
+        "q" => Some(Action::Quit),
+        _ => None,
+    }));
+
+    out
 }

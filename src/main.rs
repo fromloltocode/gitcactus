@@ -3,6 +3,7 @@ mod editor;
 mod git;
 mod input;
 mod mascot;
+mod mouse;
 mod platform;
 #[allow(dead_code)]
 mod profile;
@@ -20,7 +21,10 @@ mod update;
 use std::io;
 use std::time::Duration;
 
-use crossterm::event::{self, Event, KeyEventKind};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind, MouseButton,
+    MouseEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -87,7 +91,12 @@ fn main() -> io::Result<()> {
     // --- terminal setup ---
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    // `EnableMouseCapture` enables the terminal's mouse-tracking
+    // escape sequence. Crossterm handles both the Unix X10/SGR
+    // flavours and the Windows console API underneath. Terminals
+    // that don't support mouse tracking will simply never emit
+    // `Event::Mouse` — the app stays fully keyboard-driven.
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -96,7 +105,9 @@ fn main() -> io::Result<()> {
 
     // --- terminal teardown (always runs) ---
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    // Disable mouse capture before leaving the alternate screen so
+    // the user's normal shell gets its click-to-select behaviour back.
+    execute!(terminal.backend_mut(), DisableMouseCapture, LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     result
@@ -151,32 +162,72 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
         };
 
         if event::poll(Duration::from_millis(poll_ms))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind != KeyEventKind::Press {
-                    continue;
-                }
+            match event::read()? {
+                Event::Key(key) => {
+                    if key.kind != KeyEventKind::Press {
+                        continue;
+                    }
 
-                // Any key press dismisses a lingering editor message.
-                app.editor_msg = None;
+                    // Any key press dismisses a lingering editor message.
+                    app.editor_msg = None;
 
-                let action = if app.needs_text_input() {
-                    map_key_text(key.code)
-                } else {
-                    map_key(key.code)
-                };
-                let effect = app.handle_action(action);
+                    let action = if app.needs_text_input() {
+                        map_key_text(key.code)
+                    } else {
+                        map_key(key.code)
+                    };
+                    let effect = app.handle_action(action);
 
-                // OpenEditor needs terminal access to suspend/restore the TUI,
-                // so handle it inline before delegating to handle_effect.
-                if let Effect::OpenEditor(path) = effect {
-                    let result = suspend_and_open_editor(terminal, &path);
-                    app.editor_msg = Some(editor::result_message(&result));
-                } else {
-                    handle_effect(&mut app, effect, &mut repo_status);
+                    // OpenEditor needs terminal access to suspend/restore the TUI,
+                    // so handle it inline before delegating to handle_effect.
+                    if let Effect::OpenEditor(path) = effect {
+                        let result = suspend_and_open_editor(terminal, &path);
+                        app.editor_msg = Some(editor::result_message(&result));
+                    } else {
+                        handle_effect(&mut app, effect, &mut repo_status);
+                    }
+                    if app.should_quit {
+                        break;
+                    }
                 }
-                if app.should_quit {
-                    break;
+                Event::Mouse(m) => {
+                    // Only react to the primary-button *press*. Everything
+                    // else — drags, releases, middle/right buttons, scroll
+                    // wheels — is ignored so the mouse surface is strictly
+                    // "click to activate".
+                    if !matches!(m.kind, MouseEventKind::Down(MouseButton::Left)) {
+                        continue;
+                    }
+
+                    // Mouse clicks also dismiss the editor banner, same as keys.
+                    app.editor_msg = None;
+
+                    let area = terminal.size().map(|s| ratatui::layout::Rect {
+                        x: 0,
+                        y: 0,
+                        width: s.width,
+                        height: s.height,
+                    });
+                    if let Ok(area) = area {
+                        let targets = ui::click_targets(area, &app);
+                        if let Some(click_action) =
+                            mouse::resolve_click(&targets, m.column, m.row)
+                        {
+                            let effect = app.handle_click_action(click_action);
+                            if let Effect::OpenEditor(path) = effect {
+                                let result = suspend_and_open_editor(terminal, &path);
+                                app.editor_msg =
+                                    Some(editor::result_message(&result));
+                            } else {
+                                handle_effect(&mut app, effect, &mut repo_status);
+                            }
+                            if app.should_quit {
+                                break;
+                            }
+                        }
+                    }
                 }
+                _ => {}
             }
         } else if app.screen == Screen::Intro {
             // No key pressed during intro — advance the animation frame.
@@ -248,7 +299,14 @@ fn suspend_and_open_editor(
     // control of the terminal. Use `let _ =` so a failure here doesn't
     // prevent the editor attempt — we'll still report any error.
     let _ = disable_raw_mode();
-    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+    // Mouse capture has to be released while the editor runs —
+    // leaving it on would eat the user's mouse clicks in the
+    // editor's own UI. Re-enabled below after the editor exits.
+    let _ = execute!(
+        terminal.backend_mut(),
+        DisableMouseCapture,
+        LeaveAlternateScreen
+    );
     let _ = terminal.show_cursor();
 
     let result = editor::open_in_editor(path);
@@ -256,7 +314,11 @@ fn suspend_and_open_editor(
     // Restore the TUI. If any of these fail, the next draw call will
     // typically surface the error and exit cleanly via the normal path.
     let _ = enable_raw_mode();
-    let _ = execute!(terminal.backend_mut(), EnterAlternateScreen);
+    let _ = execute!(
+        terminal.backend_mut(),
+        EnterAlternateScreen,
+        EnableMouseCapture
+    );
     let _ = terminal.clear();
     let _ = terminal.hide_cursor();
 

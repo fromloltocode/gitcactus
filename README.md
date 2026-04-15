@@ -26,7 +26,10 @@ GitCactus aims to be the middle ground:
 - **Teaches Git** — the Hybrid terminology mode shows "Checkpoint (Commit)" so beginners learn the real words over time rather than being walled off from them.
 - **Searchable** — press `/` to filter history and branches instantly.
 - **Editor-friendly** — press `o` to open the selected file in `$EDITOR`.
-- **Keyboard-first** — arrow keys, Vim-style (`j/k`), and WASD all work everywhere.
+- **Keyboard-first, mouse-friendly** — arrow keys, Vim-style (`j/k`), and WASD
+  all work everywhere; menu items, settings rows, confirmation buttons, and
+  the footer `Esc`/`q`/`Enter` hints are also clickable on terminals that
+  support mouse events.
 
 ## Status
 
@@ -35,7 +38,8 @@ GitCactus aims to be the middle ground:
 ## Features
 
 - Retro 80s/90s-style intro animation (skippable, remembered in settings)
-- Keyboard-navigable main menu (arrow keys, j/k/w/s, Enter)
+- Keyboard-navigable main menu (arrow keys, j/k/w/s, Enter) with mouse
+  support for clickable menu items and footer controls
 - Live git status view with branch + grouped file lists
 - Interactive staging with file selection and confirmation
 - Guided commit flow with inline message input
