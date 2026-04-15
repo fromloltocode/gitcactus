@@ -17,8 +17,8 @@
 class Gitcactus < Formula
   desc "Retro-inspired terminal Git assistant with beginner-friendly UX"
   homepage "https://github.com/fromloltocode/gitcactus"
-  url "https://github.com/fromloltocode/gitcactus/archive/refs/tags/v0.4.1.tar.gz"
-  sha256 "a6a8fa973c51c97a86ebb061998cdc091966d9a56608f7f9484a293aac698602"
+  url "https://github.com/fromloltocode/gitcactus/archive/refs/tags/v0.4.2.tar.gz"
+  sha256 "87170ae9e3243356cf93df5372778031d2a96bc01db78673d03e1399c547f0e4"
   license "MIT"
   head "https://github.com/fromloltocode/gitcactus.git", branch: "main"
 
