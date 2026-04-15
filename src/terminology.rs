@@ -297,7 +297,8 @@ impl Terms {
             7 => "Check for Updates",
             8 => "Settings",
             9 => "Skill Tree",
-            10 => "Quit",
+            10 => self.pricklings_menu_label(),
+            11 => "Quit",
             _ => "???",
         }
     }

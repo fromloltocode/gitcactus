@@ -56,6 +56,10 @@ pub struct ChangelogEntry {
 fn canned_changelog() -> Vec<ChangelogEntry> {
     vec![
         ChangelogEntry {
+            version: "0.5.1".into(),
+            summary: "Fix: typing into the Pricklings scan-path input now works; outside-repo startup lands on the main menu with Pricklings as a first-class entry.".into(),
+        },
+        ChangelogEntry {
             version: "0.5.0".into(),
             summary: "Pricklings: discover, save, and open local Git projects from outside any repo. Guided self-update flow.".into(),
         },

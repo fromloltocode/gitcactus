@@ -149,11 +149,15 @@ pub const MENU_ITEMS: &[(&str, Screen)] = &[
     ("Check for Updates", Screen::Update),
     ("Settings", Screen::Settings),
     ("Skill Tree", Screen::SkillTree),
+    ("Pricklings", Screen::PricklingsHub),
     ("Quit", Screen::Title), // sentinel — handled specially
 ];
 
+/// Index of the "Pricklings" entry in MENU_ITEMS.
+pub const PRICKLINGS_INDEX: usize = 10;
+
 /// Index of the "Quit" entry in MENU_ITEMS.
-pub const QUIT_INDEX: usize = 10;
+pub const QUIT_INDEX: usize = 11;
 
 // ── Stage screen state ───────────────────────────────────────────────
 
@@ -1508,6 +1512,8 @@ impl App {
                 && self.branches_state.mode == BranchesMode::Creating)
             || (self.screen == Screen::History && self.history.search_mode)
             || (self.screen == Screen::Branches && self.branches_state.search_mode)
+            || (self.screen == Screen::ScanLocations
+                && self.scan_locations.mode == ScanLocationsMode::Adding)
     }
 
     /// Move menu selection up.
@@ -1609,10 +1615,11 @@ impl App {
                 // splash. Destination depends on whether we're
                 // launched inside a real repo: menu for repo users,
                 // Launchpad for "I want to open a project" users.
+                self.screen = Screen::Menu;
                 if self.outside_repo {
-                    self.screen = Screen::Launchpad;
-                } else {
-                    self.screen = Screen::Menu;
+                    // Pre-select the Pricklings entry so the most
+                    // useful action outside a repo is one Enter away.
+                    self.menu_index = PRICKLINGS_INDEX;
                 }
                 Effect::None
             }
@@ -1649,6 +1656,10 @@ impl App {
                         Screen::History => Effect::LoadHistory,
                         Screen::Branches => Effect::LoadBranches,
                         Screen::RemoteSync => Effect::LoadRemoteSync,
+                        Screen::PricklingsHub => {
+                            self.pricklings_hub.clamp_cursor();
+                            Effect::LoadPricklings
+                        }
                         _ => Effect::None,
                     }
                 }
@@ -2332,11 +2343,8 @@ impl App {
             Screen::PricklingsHub => match action {
                 Action::Quit => Effect::Quit,
                 Action::Back => {
-                    // If the user reached the hub from the Launchpad
-                    // (outside a repo), going back should return them
-                    // there rather than to the in-repo main menu.
                     self.pricklings_hub.result_msg = None;
-                    self.screen = Screen::Launchpad;
+                    self.back_to_menu();
                     Effect::None
                 }
                 Action::MoveUp => {

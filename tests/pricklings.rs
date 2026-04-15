@@ -230,11 +230,11 @@ fn hub_d_on_action_row_is_a_noop() {
 }
 
 #[test]
-fn hub_back_returns_to_launchpad() {
+fn hub_back_returns_to_menu() {
     let mut app = App::new();
     app.screen = Screen::PricklingsHub;
     let _ = app.handle_action(Action::Back);
-    assert_eq!(app.screen, Screen::Launchpad);
+    assert_eq!(app.screen, Screen::Menu);
 }
 
 // ── Scan Locations input handling ───────────────────────────────────
