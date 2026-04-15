@@ -5,11 +5,13 @@ mod input;
 mod mascot;
 mod mouse;
 mod platform;
+mod pricklings;
 #[allow(dead_code)]
 mod profile;
 #[allow(dead_code)]
 mod progression;
 mod screens;
+mod self_update;
 mod settings;
 #[allow(dead_code)]
 mod terminology;
@@ -138,6 +140,16 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
 
     // Read repo status once on startup.
     let mut repo_status = read_status(".");
+    // Route outside-repo launches through the Launchpad instead of
+    // dumping the user into a main menu full of "not a git repo"
+    // messages. `outside_repo` stays on App so the Title screen
+    // picks the right post-splash destination and so `OpenPrickling`
+    // can flip it off once a repo context is established.
+    app.outside_repo = !repo_status.is_real;
+    if app.outside_repo && app.screen == Screen::Title {
+        // skip_intro path: go straight to Launchpad.
+        app.screen = Screen::Launchpad;
+    }
 
     loop {
         terminal.draw(|frame| ui::draw(frame, &app, &repo_status))?;
@@ -178,14 +190,10 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                     };
                     let effect = app.handle_action(action);
 
-                    // OpenEditor needs terminal access to suspend/restore the TUI,
-                    // so handle it inline before delegating to handle_effect.
-                    if let Effect::OpenEditor(path) = effect {
-                        let result = suspend_and_open_editor(terminal, &path);
-                        app.editor_msg = Some(editor::result_message(&result));
-                    } else {
-                        handle_effect(&mut app, effect, &mut repo_status);
-                    }
+                    // Some effects need terminal access to suspend/restore
+                    // the TUI (editor, self-update). Dispatch them inline
+                    // before falling through to the generic handler.
+                    dispatch_effect(&mut app, effect, terminal, &mut repo_status);
                     if app.should_quit {
                         break;
                     }
@@ -214,13 +222,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                             mouse::resolve_click(&targets, m.column, m.row)
                         {
                             let effect = app.handle_click_action(click_action);
-                            if let Effect::OpenEditor(path) = effect {
-                                let result = suspend_and_open_editor(terminal, &path);
-                                app.editor_msg =
-                                    Some(editor::result_message(&result));
-                            } else {
-                                handle_effect(&mut app, effect, &mut repo_status);
-                            }
+                            dispatch_effect(&mut app, effect, terminal, &mut repo_status);
                             if app.should_quit {
                                 break;
                             }
@@ -234,7 +236,11 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
             let done = app.intro.tick();
             if done {
                 Settings::mark_intro_seen();
-                app.screen = Screen::Title;
+                app.screen = if app.outside_repo {
+                    Screen::Launchpad
+                } else {
+                    Screen::Title
+                };
             }
         } else if app.screen == Screen::RebaseExecute
             && matches!(app.rebase_execute.mode, app::RebaseExecuteMode::Animating)
@@ -325,6 +331,138 @@ fn suspend_and_open_editor(
     result
 }
 
+/// Dispatch an `Effect`, routing the few variants that need direct
+/// terminal access (TUI suspend/restore, streamed subprocess output)
+/// before falling through to the generic `handle_effect` path.
+fn dispatch_effect(
+    app: &mut App,
+    effect: Effect,
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    repo_status: &mut git::status::RepoStatus,
+) {
+    match effect {
+        Effect::OpenEditor(path) => {
+            let result = suspend_and_open_editor(terminal, &path);
+            app.editor_msg = Some(editor::result_message(&result));
+        }
+        Effect::RunUpdate => {
+            run_self_update(app, terminal);
+        }
+        other => handle_effect(app, other, repo_status),
+    }
+}
+
+/// Suspend the TUI, stream the self-update command's output to the
+/// real terminal, then restore the TUI. Writes the result into
+/// `app.update.outcome` and flips the screen into `Result` mode.
+fn run_self_update(
+    app: &mut App,
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+) {
+    use std::process::Command;
+
+    let plan = match app.update.plan.clone() {
+        Some(p) => p,
+        None => {
+            // Defensive: should never be reached from the UI because
+            // RunUpdate only fires in ConfirmUpdate mode where a plan
+            // is required.
+            app.update.outcome = Some(app::UpdateOutcome::Unsupported);
+            app.update.mode = app::UpdateMode::Result;
+            return;
+        }
+    };
+    let cmd_spec = match &plan.command {
+        Some(c) => c.clone(),
+        None => {
+            app.update.outcome = Some(app::UpdateOutcome::Unsupported);
+            app.update.mode = app::UpdateMode::Result;
+            return;
+        }
+    };
+
+    // --- suspend TUI so the subprocess can take the terminal ---
+    let _ = disable_raw_mode();
+    let _ = execute!(
+        terminal.backend_mut(),
+        DisableMouseCapture,
+        LeaveAlternateScreen
+    );
+    let _ = terminal.show_cursor();
+
+    // Print a small header so the user sees what's happening.
+    println!();
+    println!("\u{2192} Running: {}", cmd_spec.render());
+    println!();
+
+    // Run inheriting stdio — streams straight to the user's terminal,
+    // no buffering, no messy panel of captured text. If the command
+    // fails to launch at all, that's the only case where we capture
+    // its error for the Result screen.
+    let status = Command::new(&cmd_spec.program)
+        .args(&cmd_spec.args)
+        .status();
+
+    let outcome = match status {
+        Ok(s) if s.success() => {
+            println!();
+            println!("\u{2713} Update finished successfully.");
+            if plan.requires_relaunch {
+                println!("  Relaunch gitcactus to use the new version.");
+            }
+            println!();
+            app::UpdateOutcome::Success {
+                message: if plan.requires_relaunch {
+                    "Update finished. Relaunch gitcactus to use the new version.".into()
+                } else {
+                    "Update finished successfully.".into()
+                },
+            }
+        }
+        Ok(s) => {
+            let code = s.code().unwrap_or(-1);
+            println!();
+            println!("\u{2717} Update command exited with status {code}.");
+            println!();
+            app::UpdateOutcome::Failure {
+                message: format!(
+                    "`{}` exited with status {code}.",
+                    cmd_spec.render()
+                ),
+            }
+        }
+        Err(e) => {
+            println!();
+            println!("\u{2717} Could not launch updater: {e}");
+            println!();
+            app::UpdateOutcome::Failure {
+                message: format!("Could not launch `{}`: {e}", cmd_spec.program),
+            }
+        }
+    };
+
+    // Tiny pause so the user can read the final line before we
+    // snap the TUI back on top of their terminal scrollback.
+    print!("(press Enter to return to GitCactus) ");
+    use std::io::Write as _;
+    let _ = io::stdout().flush();
+    let mut _s = String::new();
+    let _ = io::stdin().read_line(&mut _s);
+
+    // --- restore TUI ---
+    let _ = enable_raw_mode();
+    let _ = execute!(
+        terminal.backend_mut(),
+        EnterAlternateScreen,
+        EnableMouseCapture
+    );
+    let _ = terminal.clear();
+    let _ = terminal.hide_cursor();
+
+    app.update.outcome = Some(outcome);
+    app.update.mode = app::UpdateMode::Result;
+}
+
 fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::RepoStatus) {
     match effect {
         Effect::None => {}
@@ -362,6 +500,32 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
             app.update = UpdateState::new();
             app.update.info = Some(update::check_for_updates());
         }
+        Effect::PrepareUpdate => {
+            // Detect the install kind and build a plan. If the plan
+            // has no command (unsupported install kind), route the UI
+            // straight to Result mode with an honest Unsupported
+            // outcome so the screen shows the right instructions.
+            let kind = self_update::detect_install();
+            let plan = self_update::UpdatePlan::for_kind(kind);
+            if plan.command.is_some() {
+                app.update.plan = Some(plan);
+                app.update.mode = app::UpdateMode::ConfirmUpdate;
+            } else {
+                app.update.plan = Some(plan);
+                app.update.outcome = Some(app::UpdateOutcome::Unsupported);
+                app.update.mode = app::UpdateMode::Result;
+            }
+        }
+        Effect::RunUpdate => {
+            // Handled inline in `dispatch_effect` so we have terminal
+            // access for TUI suspend / restore. Reaching this arm
+            // means the effect escaped the inline path — surface it
+            // as a soft failure rather than silently dropping it.
+            app.update.outcome = Some(app::UpdateOutcome::Failure {
+                message: "Internal error: update runner did not dispatch.".into(),
+            });
+            app.update.mode = app::UpdateMode::Result;
+        }
         Effect::InitCommit => {
             *repo_status = read_status(".");
             app.commit = CommitState::from_repo(repo_status);
@@ -398,7 +562,11 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
         }
         Effect::IntroFinished => {
             Settings::mark_intro_seen();
-            app.screen = Screen::Title;
+            app.screen = if app.outside_repo {
+                Screen::Launchpad
+            } else {
+                Screen::Title
+            };
         }
         Effect::SaveTermMode(mode) => {
             Settings::save_term_mode(mode);
@@ -605,6 +773,81 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
         Effect::LoadRemoteSync => {
             app.remote_sync.info = git::remote::load_remote_info(".");
             app.remote_sync.clamp_cursor();
+        }
+        Effect::LoadPricklings => {
+            app.pricklings_hub.store = crate::pricklings::PricklingsStore::load();
+            app.pricklings_hub.clamp_cursor();
+        }
+        Effect::ScanPricklings => {
+            let result =
+                crate::pricklings::discovery::scan_roots(&app.pricklings_hub.store.scan_roots);
+            app.pricklings_results.results = result.found;
+            app.pricklings_results.errors = result.errors;
+            app.pricklings_results.cursor = 0;
+            app.screen = Screen::PricklingsResults;
+        }
+        Effect::OpenPrickling(path) => {
+            if !path.exists() {
+                app.pricklings_hub.result_msg = Some((
+                    format!("Path no longer exists: {}", path.display()),
+                    false,
+                ));
+            } else if std::env::set_current_dir(&path).is_err() {
+                app.pricklings_hub.result_msg = Some((
+                    format!("Could not open: {}", path.display()),
+                    false,
+                ));
+            } else {
+                *repo_status = read_status(".");
+                if repo_status.is_real {
+                    app.stage = StageState::from_repo(repo_status);
+                    app.screen = Screen::Menu;
+                    app.pricklings_hub.result_msg = None;
+                } else {
+                    app.pricklings_hub.result_msg = Some((
+                        format!("Not a git repository: {}", path.display()),
+                        false,
+                    ));
+                }
+            }
+        }
+        Effect::SavePrickling(p) => {
+            let added = app.pricklings_hub.store.save_prickling(p);
+            app.pricklings_hub.store.save();
+            app.pricklings_results.result_msg = Some((
+                if added {
+                    "Saved to your pricklings.".into()
+                } else {
+                    "Already in your pricklings.".into()
+                },
+                added,
+            ));
+        }
+        Effect::RemoveSavedPrickling(idx) => {
+            app.pricklings_hub.store.remove_saved(idx);
+            app.pricklings_hub.store.save();
+            app.pricklings_hub.clamp_cursor();
+        }
+        Effect::AddScanRoot(path) => {
+            let added = app.pricklings_hub.store.add_scan_root(&path);
+            app.pricklings_hub.store.save();
+            app.scan_locations.roots = app.pricklings_hub.store.scan_roots.clone();
+            app.scan_locations.input_buffer.clear();
+            app.scan_locations.result_msg = Some((
+                if added {
+                    format!("Added: {}", path.display())
+                } else {
+                    format!("Could not add: {}", path.display())
+                },
+                added,
+            ));
+            app.scan_locations.mode = app::ScanLocationsMode::Result;
+        }
+        Effect::RemoveScanRoot(idx) => {
+            app.pricklings_hub.store.remove_scan_root(idx);
+            app.pricklings_hub.store.save();
+            app.scan_locations.roots = app.pricklings_hub.store.scan_roots.clone();
+            app.scan_locations.clamp_cursor();
         }
         Effect::FetchFromRemote(remote_name) => {
             use git::remote::FetchResult;
