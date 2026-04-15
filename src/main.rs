@@ -34,7 +34,7 @@ use crossterm::terminal::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use app::{App, CommitState, Effect, Screen, StageState, UpdateState};
+use app::{App, CommitState, Effect, PRICKLINGS_INDEX, Screen, StageState, UpdateState};
 use git::commit::create_commit;
 use git::diff::get_file_diff;
 use git::stage::stage_files;
@@ -147,8 +147,10 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
     // can flip it off once a repo context is established.
     app.outside_repo = !repo_status.is_real;
     if app.outside_repo && app.screen == Screen::Title {
-        // skip_intro path: go straight to Launchpad.
-        app.screen = Screen::Launchpad;
+        // skip_intro path: land on the main menu with Pricklings
+        // pre-selected so the most useful action is one Enter away.
+        app.screen = Screen::Menu;
+        app.menu_index = PRICKLINGS_INDEX;
     }
 
     loop {
@@ -236,11 +238,12 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
             let done = app.intro.tick();
             if done {
                 Settings::mark_intro_seen();
-                app.screen = if app.outside_repo {
-                    Screen::Launchpad
+                if app.outside_repo {
+                    app.screen = Screen::Menu;
+                    app.menu_index = PRICKLINGS_INDEX;
                 } else {
-                    Screen::Title
-                };
+                    app.screen = Screen::Title;
+                }
             }
         } else if app.screen == Screen::RebaseExecute
             && matches!(app.rebase_execute.mode, app::RebaseExecuteMode::Animating)
@@ -562,11 +565,12 @@ fn handle_effect(app: &mut App, effect: Effect, repo_status: &mut git::status::R
         }
         Effect::IntroFinished => {
             Settings::mark_intro_seen();
-            app.screen = if app.outside_repo {
-                Screen::Launchpad
+            if app.outside_repo {
+                app.screen = Screen::Menu;
+                app.menu_index = PRICKLINGS_INDEX;
             } else {
-                Screen::Title
-            };
+                app.screen = Screen::Title;
+            }
         }
         Effect::SaveTermMode(mode) => {
             Settings::save_term_mode(mode);

@@ -56,6 +56,10 @@ pub struct ChangelogEntry {
 fn canned_changelog() -> Vec<ChangelogEntry> {
     vec![
         ChangelogEntry {
+            version: "0.5.2".into(),
+            summary: "Fix: outside-repo launches now actually land on the main menu (the post-intro routing in main.rs was still sending users straight to the Launchpad).".into(),
+        },
+        ChangelogEntry {
             version: "0.5.1".into(),
             summary: "Fix: typing into the Pricklings scan-path input now works; outside-repo startup lands on the main menu with Pricklings as a first-class entry.".into(),
         },

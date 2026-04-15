@@ -127,7 +127,10 @@ pub enum Screen {
     /// Actually running rebase + animation + result.
     RebaseExecute,
     /// Outside-repo entry screen shown when `gitcactus` is launched
-    /// in a directory that isn't a Git repository.
+    /// in a directory that isn't a Git repository. Kept for tests
+    /// and possible future re-use; outside-repo startup now lands
+    /// directly on the main menu instead.
+    #[allow(dead_code)]
     Launchpad,
     /// Pricklings hub: saved projects + actions to find or manage.
     PricklingsHub,
