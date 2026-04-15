@@ -56,8 +56,20 @@ pub struct ChangelogEntry {
 fn canned_changelog() -> Vec<ChangelogEntry> {
     vec![
         ChangelogEntry {
+            version: "0.5.0".into(),
+            summary: "Pricklings: discover, save, and open local Git projects from outside any repo. Guided self-update flow.".into(),
+        },
+        ChangelogEntry {
+            version: "0.4.2".into(),
+            summary: "Cleared a stray v1.0.0 tag that was causing false 'newer version available' banners.".into(),
+        },
+        ChangelogEntry {
+            version: "0.4.1".into(),
+            summary: "Theme propagation across all 'normal' screens; real version check via git ls-remote with semver ordering.".into(),
+        },
+        ChangelogEntry {
             version: "0.4.0".into(),
-            summary: "Rebase Portal execution, continue/abort, mouse input, remote sync scaffolding".into(),
+            summary: "Windows native support, in-app theme selection, mouse support. (Earlier in the 0.4 line: Rebase Portal execution with continue/abort.)".into(),
         },
         ChangelogEntry {
             version: "0.2.0".into(),

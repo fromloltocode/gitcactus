@@ -40,8 +40,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     if app.update.mode == UpdateMode::ReleaseNotes {
         render_release_notes(frame, area, app);
     }
+    if app.update.mode == UpdateMode::ConfirmUpdate {
+        render_confirm_update(frame, area, app);
+    }
     if app.update.mode == UpdateMode::Result {
-        render_result_dialog(frame, area);
+        render_result_dialog(frame, area, app);
     }
 }
 
@@ -271,66 +274,215 @@ fn render_release_notes(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(text, inner);
 }
 
-// ── "Not yet implemented" result ─────────────────────────────────────
+// ── Confirm Update ───────────────────────────────────────────────────
 
-fn render_result_dialog(frame: &mut Frame, area: Rect) {
-    let dialog = centered_rect(62, 12, area);
+fn render_confirm_update(frame: &mut Frame, area: Rect, app: &App) {
+    let plan = match app.update.plan.as_ref() {
+        Some(p) => p,
+        None => return,
+    };
+    let cmd = match plan.command.as_ref() {
+        Some(c) => c,
+        None => return, // Unsupported plans skip ConfirmUpdate entirely.
+    };
+
+    let dialog = centered_rect(68, 14, area);
     frame.render_widget(Clear, dialog);
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow))
-        .title(" How to Update ")
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(" Confirm Update ")
         .title_alignment(Alignment::Center);
     let inner = block.inner(dialog);
     frame.render_widget(block, dialog);
 
     let text = Paragraph::new(Text::from(vec![
         Line::from(""),
-        Line::from(Span::styled(
-            "  Built-in self-update isn't available yet.",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-        Line::from(Span::styled(
-            "  In the meantime, update via:",
-            Style::default().fg(Color::DarkGray),
-        )),
         Line::from(vec![
-            Span::styled("    \u{2022} ", Style::default().fg(Color::Cyan)),
+            Span::styled("  Detected install: ", Style::default().fg(Color::DarkGray)),
             Span::styled(
-                "brew upgrade gitcactus",
-                Style::default().fg(Color::White),
+                plan.kind.label(),
+                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
             ),
-            Span::styled("  (Homebrew tap)", Style::default().fg(Color::DarkGray)),
-        ]),
-        Line::from(vec![
-            Span::styled("    \u{2022} ", Style::default().fg(Color::Cyan)),
-            Span::styled(
-                "GitHub Releases",
-                Style::default().fg(Color::White),
-            ),
-            Span::styled(
-                "  (prebuilt binaries, planned)",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("    \u{2022} ", Style::default().fg(Color::Cyan)),
-            Span::styled(
-                "git pull && cargo build --release",
-                Style::default().fg(Color::White),
-            ),
-            Span::styled("  (from source)", Style::default().fg(Color::DarkGray)),
         ]),
         Line::from(""),
         Line::from(Span::styled(
-            "  Press any key to close.",
+            "  GitCactus will now run:",
             Style::default().fg(Color::DarkGray),
         )),
+        Line::from(vec![
+            Span::styled("    $ ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                cmd.render(),
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  The TUI will hand over the terminal to the updater so you",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(Span::styled(
+            "  see its real output. Press Enter when it's finished to",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(Span::styled(
+            "  return to GitCactus.",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  y/Enter", Style::default().fg(Color::Green)),
+            Span::styled(" run update    ", Style::default().fg(Color::DarkGray)),
+            Span::styled("n/Esc", Style::default().fg(Color::Red)),
+            Span::styled(" cancel", Style::default().fg(Color::DarkGray)),
+        ]),
     ]));
+    frame.render_widget(text, inner);
+}
+
+// ── Result (real outcome) ────────────────────────────────────────────
+
+fn render_result_dialog(frame: &mut Frame, area: Rect, app: &App) {
+    use crate::app::UpdateOutcome;
+
+    let (title, border_color, lines): (&str, Color, Vec<Line<'_>>) = match app
+        .update
+        .outcome
+        .as_ref()
+    {
+        Some(UpdateOutcome::Success { message }) => (
+            " Update Complete ",
+            Color::Green,
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  \u{2713} Update finished.",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("  {message}"),
+                    Style::default().fg(Color::White),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  Press any key to close.",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+        ),
+        Some(UpdateOutcome::Failure { message }) => (
+            " Update Failed ",
+            Color::Red,
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  \u{2717} Update did not complete cleanly.",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("  {message}"),
+                    Style::default().fg(Color::White),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  Your existing GitCactus install is unchanged.",
+                    Style::default().fg(Color::DarkGray),
+                )),
+                Line::from(Span::styled(
+                    "  Press any key to close.",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+        ),
+        Some(UpdateOutcome::Unsupported) | None => {
+            render_unsupported_dialog(frame, area, app);
+            return;
+        }
+    };
+
+    let dialog = centered_rect(68, lines.len() as u16 + 2, area);
+    frame.render_widget(Clear, dialog);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color))
+        .title(title)
+        .title_alignment(Alignment::Center);
+    let inner = block.inner(dialog);
+    frame.render_widget(block, dialog);
+    let text = Paragraph::new(Text::from(lines));
+    frame.render_widget(text, inner);
+}
+
+/// Honest fallback when we can't self-update for this install kind.
+fn render_unsupported_dialog(frame: &mut Frame, area: Rect, app: &App) {
+    let kind_label = app
+        .update
+        .plan
+        .as_ref()
+        .map(|p| p.kind.label())
+        .unwrap_or("unknown");
+    let instructions = app
+        .update
+        .plan
+        .as_ref()
+        .map(|p| p.kind.manual_instructions())
+        .unwrap_or_else(|| {
+            vec!["See https://github.com/fromloltocode/gitcactus#install".into()]
+        });
+
+    // Size the dialog to fit the longest instruction block we carry.
+    let height = (instructions.len() as u16) + 8;
+    let dialog = centered_rect(70, height, area);
+    frame.render_widget(Clear, dialog);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow))
+        .title(" Self-Update Unavailable ")
+        .title_alignment(Alignment::Center);
+    let inner = block.inner(dialog);
+    frame.render_widget(block, dialog);
+
+    let mut lines: Vec<Line> = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                "  GitCactus can't self-update this install (",
+                Style::default().fg(Color::Yellow),
+            ),
+            Span::styled(
+                kind_label,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(").", Style::default().fg(Color::Yellow)),
+        ]),
+    ];
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "  You can update manually:",
+        Style::default().fg(Color::DarkGray),
+    )));
+    for l in &instructions {
+        lines.push(Line::from(Span::styled(
+            format!("    {l}"),
+            Style::default().fg(Color::White),
+        )));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "  Press any key to close.",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let text = Paragraph::new(Text::from(lines));
     frame.render_widget(text, inner);
 }
 
