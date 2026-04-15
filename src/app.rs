@@ -25,6 +25,14 @@ pub enum Effect {
     StageFiles(Vec<String>),
     /// Initialize the update screen (check for updates).
     InitUpdate,
+    /// Detect the install kind and prepare an update plan. Sets up
+    /// either ConfirmUpdate (if self-update is supported) or Result
+    /// (with honest instructions) on the update screen.
+    PrepareUpdate,
+    /// Actually run the upgrade command from the prepared plan.
+    /// Handled inline in the event loop so we have terminal access
+    /// for TUI suspend / restore.
+    RunUpdate,
     /// Initialize the commit screen (refresh status for staged file list).
     InitCommit,
     /// Create a commit with the given message.
@@ -74,6 +82,25 @@ pub enum Effect {
     /// only — never touches the working tree, index, HEAD, or local
     /// branches.
     FetchFromRemote(String),
+    // ── Pricklings ────────────────────────────────────────────
+    /// (Re)load the Pricklings store from disk. Read-only, no scan.
+    LoadPricklings,
+    /// Scan every approved root and populate the results screen.
+    /// Read-only filesystem walk — no git mutation.
+    ScanPricklings,
+    /// Change the working directory into `path`, reload repo status,
+    /// and drop the user into the normal main menu. Non-destructive:
+    /// if the path no longer exists or isn't a repo, the user sees
+    /// an error banner and stays on the Pricklings surface.
+    OpenPrickling(std::path::PathBuf),
+    /// Persist a Prickling to the saved list.
+    SavePrickling(crate::pricklings::Prickling),
+    /// Remove the Prickling at the given index from the saved list.
+    RemoveSavedPrickling(usize),
+    /// Add a user-supplied path to the approved scan roots.
+    AddScanRoot(std::path::PathBuf),
+    /// Remove the scan root at the given index.
+    RemoveScanRoot(usize),
 }
 
 /// The screens the app can display.
@@ -99,6 +126,15 @@ pub enum Screen {
     RebasePortal,
     /// Actually running rebase + animation + result.
     RebaseExecute,
+    /// Outside-repo entry screen shown when `gitcactus` is launched
+    /// in a directory that isn't a Git repository.
+    Launchpad,
+    /// Pricklings hub: saved projects + actions to find or manage.
+    PricklingsHub,
+    /// Manage approved scan roots + kick off a scan.
+    ScanLocations,
+    /// Results of the last scan — pricklings the user can open or save.
+    PricklingsResults,
 }
 
 /// Main menu items, in display order.
@@ -235,8 +271,22 @@ pub enum UpdateMode {
     Main,
     /// Viewing release notes.
     ReleaseNotes,
-    /// Showing a "not yet implemented" result.
+    /// About to run a real update — show command + confirm.
+    ConfirmUpdate,
+    /// Result of the last update attempt (or honest "unsupported").
     Result,
+}
+
+/// Outcome of an attempted self-update, rendered by the Result dialog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UpdateOutcome {
+    /// An update command ran and exited 0.
+    Success { message: String },
+    /// The update command exited non-zero or failed to launch.
+    Failure { message: String },
+    /// We refused to start because this install kind can't self-update.
+    /// The screen shows the detected kind and manual instructions.
+    Unsupported,
 }
 
 /// Menu options on the update screen.
@@ -252,6 +302,11 @@ pub struct UpdateState {
     pub cursor: usize,
     pub mode: UpdateMode,
     pub info: Option<crate::update::UpdateInfo>,
+    /// Plan computed when the user opens "Update Now" — detected
+    /// install kind + the exact command we'd run.
+    pub plan: Option<crate::self_update::UpdatePlan>,
+    /// Result of the last update run, used by the Result mode.
+    pub outcome: Option<UpdateOutcome>,
 }
 
 impl Default for UpdateState {
@@ -264,6 +319,8 @@ impl UpdateState {
             cursor: 0,
             mode: UpdateMode::Main,
             info: None,
+            plan: None,
+            outcome: None,
         }
     }
 
@@ -1107,6 +1164,228 @@ impl RemoteSyncState {
     }
 }
 
+// ── Pricklings screen states ─────────────────────────────────────────
+
+/// Number of cursor positions on the Launchpad:
+/// Pricklings, Settings, Exit.
+pub const LAUNCHPAD_ITEMS: usize = 3;
+
+/// State for the outside-repo entry screen.
+#[derive(Debug, Default)]
+pub struct LaunchpadState {
+    pub cursor: usize,
+}
+
+impl LaunchpadState {
+    pub fn new() -> Self {
+        Self { cursor: 0 }
+    }
+    pub fn move_up(&mut self) {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+        }
+    }
+    pub fn move_down(&mut self) {
+        if self.cursor + 1 < LAUNCHPAD_ITEMS {
+            self.cursor += 1;
+        }
+    }
+}
+
+/// Pricklings Hub state.
+///
+/// Shows the saved list on top + a fixed set of action rows below.
+/// The cursor walks the combined list (saved rows first, actions
+/// second) so the existing list-nav keyboard muscle memory works.
+#[derive(Debug)]
+pub struct PricklingsHubState {
+    pub store: crate::pricklings::PricklingsStore,
+    pub cursor: usize,
+    pub result_msg: Option<(String, bool)>,
+}
+
+impl Default for PricklingsHubState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PricklingsHubState {
+    /// Fixed action rows at the bottom: "Find new pricklings" and
+    /// "Manage scan locations".
+    pub const ACTION_ROWS: usize = 2;
+
+    pub fn new() -> Self {
+        Self {
+            store: crate::pricklings::PricklingsStore::default(),
+            cursor: 0,
+            result_msg: None,
+        }
+    }
+
+    pub fn total_rows(&self) -> usize {
+        self.store.saved.len() + Self::ACTION_ROWS
+    }
+
+    pub fn move_up(&mut self) {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+        }
+    }
+    pub fn move_down(&mut self) {
+        if self.cursor + 1 < self.total_rows() {
+            self.cursor += 1;
+        }
+    }
+    pub fn clamp_cursor(&mut self) {
+        let n = self.total_rows();
+        if n == 0 {
+            self.cursor = 0;
+        } else if self.cursor >= n {
+            self.cursor = n - 1;
+        }
+    }
+
+    pub fn selection(&self) -> HubSelection {
+        let n_saved = self.store.saved.len();
+        if self.cursor < n_saved {
+            HubSelection::Saved(self.cursor)
+        } else {
+            match self.cursor - n_saved {
+                0 => HubSelection::Find,
+                _ => HubSelection::ManageLocations,
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HubSelection {
+    Saved(usize),
+    Find,
+    ManageLocations,
+}
+
+/// Scan-locations screen state.
+#[derive(Debug)]
+pub struct ScanLocationsState {
+    pub roots: Vec<std::path::PathBuf>,
+    pub cursor: usize,
+    pub mode: ScanLocationsMode,
+    pub input_buffer: String,
+    pub result_msg: Option<(String, bool)>,
+    pub suggestions: Vec<std::path::PathBuf>,
+}
+
+impl Default for ScanLocationsState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ScanLocationsState {
+    /// Two fixed action rows appended after the roots list:
+    /// "Add path…" and "Scan now".
+    pub const ACTION_ROWS: usize = 2;
+
+    pub fn new() -> Self {
+        Self {
+            roots: Vec::new(),
+            cursor: 0,
+            mode: ScanLocationsMode::Browse,
+            input_buffer: String::new(),
+            result_msg: None,
+            suggestions: Vec::new(),
+        }
+    }
+
+    pub fn total_rows(&self) -> usize {
+        self.roots.len() + Self::ACTION_ROWS
+    }
+
+    pub fn move_up(&mut self) {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+        }
+    }
+    pub fn move_down(&mut self) {
+        if self.cursor + 1 < self.total_rows() {
+            self.cursor += 1;
+        }
+    }
+    pub fn clamp_cursor(&mut self) {
+        let n = self.total_rows();
+        if n == 0 {
+            self.cursor = 0;
+        } else if self.cursor >= n {
+            self.cursor = n - 1;
+        }
+    }
+
+    pub fn selection(&self) -> ScanLocationsSelection {
+        let n = self.roots.len();
+        if self.cursor < n {
+            ScanLocationsSelection::Root(self.cursor)
+        } else {
+            match self.cursor - n {
+                0 => ScanLocationsSelection::AddPath,
+                _ => ScanLocationsSelection::ScanNow,
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanLocationsMode {
+    Browse,
+    Adding,
+    Result,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanLocationsSelection {
+    Root(usize),
+    AddPath,
+    ScanNow,
+}
+
+/// Pricklings scan-results screen state.
+#[derive(Debug, Default)]
+pub struct PricklingsResultsState {
+    pub results: Vec<crate::pricklings::Prickling>,
+    pub errors: Vec<(std::path::PathBuf, String)>,
+    pub cursor: usize,
+    pub result_msg: Option<(String, bool)>,
+}
+
+impl PricklingsResultsState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn move_up(&mut self) {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+        }
+    }
+    pub fn move_down(&mut self) {
+        if !self.results.is_empty() && self.cursor + 1 < self.results.len() {
+            self.cursor += 1;
+        }
+    }
+    #[allow(dead_code)]
+    pub fn clamp_cursor(&mut self) {
+        let n = self.results.len();
+        if n == 0 {
+            self.cursor = 0;
+        } else if self.cursor >= n {
+            self.cursor = n - 1;
+        }
+    }
+    pub fn selected(&self) -> Option<&crate::pricklings::Prickling> {
+        self.results.get(self.cursor)
+    }
+}
+
 pub struct App {
     /// Which screen is currently shown.
     pub screen: Screen,
@@ -1157,6 +1436,22 @@ pub struct App {
     pub animation: Option<crate::mascot::animations::AnimationState>,
     /// Whether overlay animations are enabled (from Settings).
     pub animations_enabled: bool,
+    /// State for the outside-repo Launchpad.
+    pub launchpad: LaunchpadState,
+    /// State for the Pricklings hub.
+    pub pricklings_hub: PricklingsHubState,
+    /// State for the Scan Locations screen.
+    pub scan_locations: ScanLocationsState,
+    /// State for the Pricklings Results screen.
+    pub pricklings_results: PricklingsResultsState,
+    /// Whether the current working directory is *not* a Git repo.
+    ///
+    /// Set at startup from `RepoStatus::is_real` and flipped back to
+    /// false when `OpenPrickling` successfully switches the CWD into
+    /// a real repo. Drives post-Title / post-Intro routing: outside
+    /// a repo we land on the Launchpad; inside one we land on the
+    /// main menu, same as every previous release.
+    pub outside_repo: bool,
 }
 
 impl Default for App {
@@ -1194,6 +1489,11 @@ impl App {
             remote_sync: RemoteSyncState::new(),
             animation: None,
             animations_enabled: true,
+            launchpad: LaunchpadState::new(),
+            pricklings_hub: PricklingsHubState::new(),
+            scan_locations: ScanLocationsState::new(),
+            pricklings_results: PricklingsResultsState::new(),
+            outside_repo: false,
         }
     }
 
@@ -1305,8 +1605,15 @@ impl App {
 
             // ── Title ────────────────────────────────────────────
             Screen::Title => {
-                // Any key (including Quit/Back) advances to menu.
-                self.screen = Screen::Menu;
+                // Any key (including Quit/Back) advances past the
+                // splash. Destination depends on whether we're
+                // launched inside a real repo: menu for repo users,
+                // Launchpad for "I want to open a project" users.
+                if self.outside_repo {
+                    self.screen = Screen::Launchpad;
+                } else {
+                    self.screen = Screen::Menu;
+                }
                 Effect::None
             }
 
@@ -1889,7 +2196,11 @@ impl App {
                     }
                     Action::Select => {
                         match self.update.cursor {
-                            0 => self.update.mode = UpdateMode::Result,
+                            // "Update Now" now really prepares an update.
+                            // The event loop detects the install kind and
+                            // routes us into ConfirmUpdate or Result
+                            // (with honest fallback instructions).
+                            0 => return Effect::PrepareUpdate,
                             1 => self.update.mode = UpdateMode::ReleaseNotes,
                             2 | 3 => self.back_to_menu(),
                             _ => {}
@@ -1903,8 +2214,24 @@ impl App {
                     self.update.mode = UpdateMode::Main;
                     Effect::None
                 }
+                UpdateMode::ConfirmUpdate => match action {
+                    Action::Quit => Effect::Quit,
+                    // Esc / n / Back cancel — drop the plan entirely.
+                    Action::Back | Action::Deny => {
+                        self.update.plan = None;
+                        self.update.mode = UpdateMode::Main;
+                        Effect::None
+                    }
+                    // Enter / y run the prepared update. The event loop
+                    // is responsible for TUI suspend + restore and for
+                    // populating `outcome` + flipping to Result mode.
+                    Action::Confirm | Action::Select => Effect::RunUpdate,
+                    _ => Effect::None,
+                },
                 UpdateMode::Result => {
                     // Any key dismisses the result overlay.
+                    self.update.outcome = None;
+                    self.update.plan = None;
                     self.update.mode = UpdateMode::Main;
                     Effect::None
                 }
@@ -1964,6 +2291,222 @@ impl App {
                     self.remote_sync.mode = RemoteSyncMode::Browse;
                     Effect::LoadRemoteSync
                 }
+            },
+
+            // ── Launchpad (outside-repo entry) ────────────────────
+            //
+            // Three rows: [0]=Pricklings, [1]=Settings, [2]=Exit.
+            // Back here is a no-op: the user is already at the
+            // topmost screen and the main menu isn't available
+            // outside a repo. `q` or selecting Exit quits.
+            Screen::Launchpad => match action {
+                Action::Quit => Effect::Quit,
+                Action::MoveUp => {
+                    self.launchpad.move_up();
+                    Effect::None
+                }
+                Action::MoveDown => {
+                    self.launchpad.move_down();
+                    Effect::None
+                }
+                Action::Select => match self.launchpad.cursor {
+                    0 => {
+                        // Enter Pricklings hub.
+                        self.screen = Screen::PricklingsHub;
+                        self.pricklings_hub.clamp_cursor();
+                        Effect::LoadPricklings
+                    }
+                    1 => {
+                        // Settings — reuse existing flow.
+                        self.settings_state =
+                            SettingsState::from_active(self.terms.mode);
+                        self.screen = Screen::Settings;
+                        Effect::None
+                    }
+                    _ => Effect::Quit,
+                },
+                _ => Effect::None,
+            },
+
+            // ── Pricklings Hub ────────────────────────────────────
+            Screen::PricklingsHub => match action {
+                Action::Quit => Effect::Quit,
+                Action::Back => {
+                    // If the user reached the hub from the Launchpad
+                    // (outside a repo), going back should return them
+                    // there rather than to the in-repo main menu.
+                    self.pricklings_hub.result_msg = None;
+                    self.screen = Screen::Launchpad;
+                    Effect::None
+                }
+                Action::MoveUp => {
+                    self.pricklings_hub.move_up();
+                    Effect::None
+                }
+                Action::MoveDown => {
+                    self.pricklings_hub.move_down();
+                    Effect::None
+                }
+                Action::Deny => {
+                    // 'd' — remove the saved prickling under the cursor.
+                    if let HubSelection::Saved(idx) = self.pricklings_hub.selection() {
+                        Effect::RemoveSavedPrickling(idx)
+                    } else {
+                        Effect::None
+                    }
+                }
+                Action::Select => match self.pricklings_hub.selection() {
+                    HubSelection::Saved(idx) => {
+                        if let Some(p) = self.pricklings_hub.store.saved.get(idx) {
+                            Effect::OpenPrickling(p.path.clone())
+                        } else {
+                            Effect::None
+                        }
+                    }
+                    HubSelection::Find => {
+                        self.scan_locations.roots =
+                            self.pricklings_hub.store.scan_roots.clone();
+                        if self.scan_locations.roots.is_empty() {
+                            // Nudge the user to approve a root first.
+                            self.scan_locations.clamp_cursor();
+                            self.screen = Screen::ScanLocations;
+                            Effect::None
+                        } else {
+                            Effect::ScanPricklings
+                        }
+                    }
+                    HubSelection::ManageLocations => {
+                        self.scan_locations.roots =
+                            self.pricklings_hub.store.scan_roots.clone();
+                        self.scan_locations.suggestions =
+                            crate::pricklings::roots::default_scan_root_candidates();
+                        self.scan_locations.clamp_cursor();
+                        self.screen = Screen::ScanLocations;
+                        Effect::None
+                    }
+                },
+                _ => Effect::None,
+            },
+
+            // ── Scan Locations ────────────────────────────────────
+            Screen::ScanLocations => match self.scan_locations.mode {
+                ScanLocationsMode::Browse => match action {
+                    Action::Quit => Effect::Quit,
+                    Action::Back => {
+                        self.screen = Screen::PricklingsHub;
+                        Effect::None
+                    }
+                    Action::MoveUp => {
+                        self.scan_locations.move_up();
+                        Effect::None
+                    }
+                    Action::MoveDown => {
+                        self.scan_locations.move_down();
+                        Effect::None
+                    }
+                    Action::Deny => {
+                        if let ScanLocationsSelection::Root(idx) =
+                            self.scan_locations.selection()
+                        {
+                            Effect::RemoveScanRoot(idx)
+                        } else {
+                            Effect::None
+                        }
+                    }
+                    Action::Select => match self.scan_locations.selection() {
+                        ScanLocationsSelection::Root(_) => Effect::None,
+                        ScanLocationsSelection::AddPath => {
+                            self.scan_locations.input_buffer.clear();
+                            self.scan_locations.mode = ScanLocationsMode::Adding;
+                            Effect::None
+                        }
+                        ScanLocationsSelection::ScanNow => {
+                            if self.scan_locations.roots.is_empty() {
+                                self.scan_locations.result_msg = Some((
+                                    "Approve at least one root before scanning.".into(),
+                                    false,
+                                ));
+                                self.scan_locations.mode = ScanLocationsMode::Result;
+                                Effect::None
+                            } else {
+                                Effect::ScanPricklings
+                            }
+                        }
+                    },
+                    _ => Effect::None,
+                },
+                ScanLocationsMode::Adding => match action {
+                    Action::Back => {
+                        self.scan_locations.input_buffer.clear();
+                        self.scan_locations.mode = ScanLocationsMode::Browse;
+                        Effect::None
+                    }
+                    Action::Char(c) => {
+                        // Generous upper bound on input length so the
+                        // buffer can't grow unboundedly from a stuck key.
+                        if self.scan_locations.input_buffer.len() < 512 {
+                            self.scan_locations.input_buffer.push(c);
+                        }
+                        Effect::None
+                    }
+                    Action::Backspace => {
+                        self.scan_locations.input_buffer.pop();
+                        Effect::None
+                    }
+                    Action::Select => {
+                        let raw = self.scan_locations.input_buffer.trim().to_string();
+                        if raw.is_empty() {
+                            Effect::None
+                        } else {
+                            Effect::AddScanRoot(std::path::PathBuf::from(raw))
+                        }
+                    }
+                    _ => Effect::None,
+                },
+                ScanLocationsMode::Result => {
+                    // Any key dismisses the banner and returns to Browse.
+                    self.scan_locations.result_msg = None;
+                    self.scan_locations.mode = ScanLocationsMode::Browse;
+                    Effect::None
+                }
+            },
+
+            // ── Pricklings Results ────────────────────────────────
+            Screen::PricklingsResults => match action {
+                Action::Quit => Effect::Quit,
+                Action::Back => {
+                    self.pricklings_results.result_msg = None;
+                    self.screen = Screen::PricklingsHub;
+                    Effect::None
+                }
+                Action::MoveUp => {
+                    self.pricklings_results.move_up();
+                    Effect::None
+                }
+                Action::MoveDown => {
+                    self.pricklings_results.move_down();
+                    Effect::None
+                }
+                Action::Refresh => Effect::ScanPricklings,
+                Action::Select => {
+                    if let Some(p) = self.pricklings_results.selected() {
+                        Effect::OpenPrickling(p.path.clone())
+                    } else {
+                        Effect::None
+                    }
+                }
+                // 's' saves the highlighted prickling to the hub.
+                // Reuses `Action::Search` — the key that already maps
+                // to 's' in non-text-input mode — so we don't have to
+                // introduce a new Action variant just for this flow.
+                Action::Search => {
+                    if let Some(p) = self.pricklings_results.selected() {
+                        Effect::SavePrickling(p.clone())
+                    } else {
+                        Effect::None
+                    }
+                }
+                _ => Effect::None,
             },
 
             // ── All other sub-screens ────────────────────────────

@@ -12,8 +12,9 @@ use crate::app::{App, Screen};
 use crate::git::status::RepoStatus;
 use crate::mouse::ClickTarget;
 use crate::screens::{
-    branches, commit, commit_details, diff, help, history, intro, menu, rebase_execute,
-    rebase_portal, remote_sync, settings_screen, skill_tree, stage, status, title, update,
+    branches, commit, commit_details, diff, help, history, intro, launchpad, menu,
+    pricklings_hub, pricklings_results, rebase_execute, rebase_portal, remote_sync,
+    scan_locations, settings_screen, skill_tree, stage, status, title, update,
 };
 
 pub fn draw(frame: &mut Frame, app: &App, repo_status: &RepoStatus) {
@@ -37,6 +38,10 @@ pub fn draw(frame: &mut Frame, app: &App, repo_status: &RepoStatus) {
         Screen::RebasePortal => rebase_portal::render(frame, area, app),
         Screen::RebaseExecute => rebase_execute::render(frame, area, app),
         Screen::RemoteSync => remote_sync::render(frame, area, app),
+        Screen::Launchpad => launchpad::render(frame, area, app),
+        Screen::PricklingsHub => pricklings_hub::render(frame, area, app),
+        Screen::ScanLocations => scan_locations::render(frame, area, app),
+        Screen::PricklingsResults => pricklings_results::render(frame, area, app),
     }
 
     // Overlay any active animation on top of the normal screen.

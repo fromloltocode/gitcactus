@@ -393,4 +393,33 @@ impl Terms {
             TermMode::Git => "Git",
         }
     }
+
+    // ── Pricklings ───────────────────────────────────────────────
+
+    /// Menu-row label used on the Launchpad for the Pricklings path.
+    pub fn pricklings_menu_label(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => "Open a Project",
+            TermMode::Hybrid => "Pricklings",
+            TermMode::Git => "Repositories",
+        }
+    }
+
+    /// Title shown at the top of the Pricklings hub screen.
+    pub fn title_pricklings(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => " Projects ",
+            TermMode::Hybrid => " Pricklings ",
+            TermMode::Git => " Repositories ",
+        }
+    }
+
+    /// Label for the "Find new pricklings" action row.
+    pub fn pricklings_find_action(&self) -> &'static str {
+        match self.mode {
+            TermMode::Beginner => "Find new projects",
+            TermMode::Hybrid => "Find new pricklings",
+            TermMode::Git => "Find new repositories",
+        }
+    }
 }
