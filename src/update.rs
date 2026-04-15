@@ -56,6 +56,10 @@ pub struct ChangelogEntry {
 fn canned_changelog() -> Vec<ChangelogEntry> {
     vec![
         ChangelogEntry {
+            version: "0.5.3".into(),
+            summary: "Fix: post-intro routing now always passes through the Title splash, so outside-repo launches no longer skip the intro/Title screen on the way to the main menu.".into(),
+        },
+        ChangelogEntry {
             version: "0.5.2".into(),
             summary: "Fix: outside-repo launches now actually land on the main menu (the post-intro routing in main.rs was still sending users straight to the Launchpad).".into(),
         },
