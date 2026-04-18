@@ -304,7 +304,7 @@ fn scan_d_on_root_emits_remove() {
     app.screen = Screen::ScanLocations;
     app.scan_locations.roots.push(PathBuf::from("/tmp/root"));
     app.scan_locations.cursor = 0;
-    let effect = app.handle_action(Action::Deny);
+    let effect = app.handle_action(Action::Preview);
     assert_eq!(effect, Effect::RemoveScanRoot(0));
 }
 

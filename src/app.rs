@@ -2415,7 +2415,7 @@ impl App {
                         self.scan_locations.move_down();
                         Effect::None
                     }
-                    Action::Deny => {
+                    Action::Preview => {
                         if let ScanLocationsSelection::Root(idx) =
                             self.scan_locations.selection()
                         {

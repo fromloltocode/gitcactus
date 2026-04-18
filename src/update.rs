@@ -56,6 +56,10 @@ pub struct ChangelogEntry {
 fn canned_changelog() -> Vec<ChangelogEntry> {
     vec![
         ChangelogEntry {
+            version: "0.5.4".into(),
+            summary: "Fix: pressing 'd' on an approved scan root now correctly removes it (was matching the wrong action variant).".into(),
+        },
+        ChangelogEntry {
             version: "0.5.3".into(),
             summary: "Fix: post-intro routing now always passes through the Title splash, so outside-repo launches no longer skip the intro/Title screen on the way to the main menu.".into(),
         },
